@@ -1,0 +1,38 @@
+{
+  "analisar_resultado": {
+    "valor": {
+      "diagnostico": "O som da guitarra apresenta um bom equilíbrio tonal geral, mas há espaço para melhorias na definição dos médios e uma presença mais clara nos agudos.",
+      "caracteristicas": [
+        "som encorpado",
+        "saturação equilibrada",
+        "resposta rápida ao ataque"
+      ],
+      "pontosFortes": [
+        "excelente definição nos graves",
+        "boa dinâmica geral"
+      ],
+      "pontosAMelhorar": [
+        "médios ligeiramente abafados",
+        "agudos podem ser mais brilhantes"
+      ],
+      "eq": {
+        "graves": "leve corte em torno de 80Hz para reduzir excesso de boominess",
+        "medios": "realçar entre 500Hz e 1kHz para maior clareza",
+        "agudos": "aumentar leve em torno de 3kHz para brilho adicional",
+        "presenca": "realçar em torno de 4kHz para melhor definição"
+      },
+      "compressao": "utilizar uma compressão suave com ataque médio e release rápido para manter a dinâmica sem esmagar o som",
+      "recomendacoes": [
+        "experimentar diferentes microfonações para capturar melhor os detalhes dos médios",
+        "testar respostas de impulso alternativas para encontrar uma que ofereça mais clareza nos agudos",
+        "considerar o uso de um pedal de equalização para ajustes finos ao vivo"
+      ],
+      "estiloAdequado": [
+        "rock clássico",
+        "blues"
+      ]
+    },
+    "timestamp": 1777002273317,
+    "userId": "88a5f543-e3f0-481a-9300-b0fae55a7e03"
+  }
+}

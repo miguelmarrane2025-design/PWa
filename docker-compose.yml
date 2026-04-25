@@ -1,0 +1,102 @@
+version: "3.9"
+
+networks:
+  botsquad-net:
+    name: botsquad-net
+    driver: bridge
+
+volumes:
+  uploads:
+  outputs:
+  irs:
+  temp:
+  previews:
+  logs:
+  memory:
+  videos:
+  pgdata:
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: botsquad-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-botsquad}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-botsquad}
+      POSTGRES_DB: ${POSTGRES_DB:-botsquad}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - botsquad-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-botsquad}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: botsquad-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-botsquad}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-botsquad}
+      DB_NAME: ${POSTGRES_DB:-botsquad}
+      STORAGE_PATH: /app/storage
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-http://localhost:4000}
+      FRONTEND_PUBLIC_URL: ${FRONTEND_PUBLIC_URL:-http://localhost:3000}
+    ports:
+      - "${BACKEND_PORT:-4000}:4000"
+    volumes:
+      - uploads:/app/storage/uploads
+      - outputs:/app/storage/outputs
+      - irs:/app/storage/irs
+      - temp:/app/storage/temp
+      - previews:/app/storage/previews
+      - logs:/app/storage/logs
+      - memory:/app/storage/memory
+      - videos:/app/storage/videos
+      - ./backend/camilla-configs:/app/camilla-configs:ro
+    networks:
+      - botsquad-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+    container_name: botsquad-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    networks:
+      - botsquad-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/health 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s

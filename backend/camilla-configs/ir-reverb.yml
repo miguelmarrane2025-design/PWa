@@ -1,0 +1,49 @@
+# ─── BotSquad CamillaDSP – IR Convolution Pipeline ──────────────────────────
+# Replace ir_file with the actual path to your .wav IR file.
+# ─────────────────────────────────────────────────────────────────────────────
+
+devices:
+  samplerate: 44100
+  chunksize: 4096
+  channels: 2
+  target_level: 0
+  adjust_period: 10
+  enable_rate_adjust: false
+  capture:
+    type: File
+    filename: "/app/storage/temp/camilla_input.raw"
+    format: S16LE
+    channels: 2
+  playback:
+    type: File
+    filename: "/app/storage/temp/camilla_output.raw"
+    format: S16LE
+    channels: 2
+
+filters:
+  ir_reverb:
+    type: Conv
+    parameters:
+      type: Raw
+      filename: "/app/storage/irs/default.raw"
+      format: S32LE
+      skip_bytes_lines: 0
+      read_bytes_lines: 0
+
+  post_gain:
+    type: Gain
+    parameters:
+      gain: -6.0
+      inverted: false
+
+pipeline:
+  - type: Filter
+    channel: 0
+    names:
+      - ir_reverb
+      - post_gain
+  - type: Filter
+    channel: 1
+    names:
+      - ir_reverb
+      - post_gain
