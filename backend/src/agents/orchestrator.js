@@ -10,12 +10,18 @@ import { contextManager }       from '../modules/context-manager.js';
 import { memoryMCP }            from '../mcps/memory-mcp.js';
 import { chat }                 from '../lib/llm.js';
 import { logger }               from '../lib/logger.js';
+import {
+  extractCarouselTopic,
+  generateCarouselPromptPack,
+  isCarouselRequest,
+  wantsHtmlSvgFallback,
+} from '../services/carousel-service.js';
 
 // Direct agent dispatch when user forces an agent
 const FORCED_AGENTS = {
   audio:   async (args) => { const { audioAgent }   = await import('./audioAgent.js');   const r = await audioAgent(args);   return { content: r.content, agent: 'audio',    metadata: { agent: 'audio',   imageUrl: r.imageUrl } }; },
   content: async (args) => { const { contentAgent } = await import('./contentAgent.js'); const r = await contentAgent(args); return { content: r.content, agent: 'content',  metadata: { agent: 'content' } }; },
-  visual:  async (args) => { const { visualAgent }  = await import('./visualAgent.js');  const r = await visualAgent(args);  return { content: r.content, agent: 'visual', metadata: { agent: 'visual', ...r }, type: r.type, files: r.files, previewUrl: r.previewUrl, downloadUrl: r.downloadUrl, success: r.success } },
+  visual:  async (args) => { const { visualAgent }  = await import('./visualAgent.js');  const r = await visualAgent(args);  return { ...r, content: r.content, agent: 'visual', metadata: { agent: 'visual', ...r }, type: r.type, files: r.files, previewUrl: r.previewUrl, downloadUrl: r.downloadUrl, zipUrl: r.zipUrl, success: r.success } },
   video:   async (args) => { const { default: videoAgent } = await import('./videoAgent.js'); const r = await videoAgent(args); return { content: r.content, agent: 'video', metadata: { agent: 'video', ...r } }; },
   hunter:  async (args) => { const { hunterAgent }  = await import('./hunterAgent.js');  const r = await hunterAgent({ ...args, tools: args.tools || {} });  return { content: r.content, agent: 'hunter',   metadata: { agent: 'hunter',  ...r.metadata } }; },
   research:async (args) => { const { researchAgent }= await import('./researchAgent.js');const r = await researchAgent({ ...args, tools: args.tools || {} });return { content: r.content, agent: 'research', metadata: { agent: 'research', ...r.metadata } }; },
@@ -149,6 +155,19 @@ export async function orchestrate({ userId, message, context = [], files = [] })
 
   const args = { userId, message: cleanMessage, context, files };
 
+  if (isCarouselRequest(cleanMessage) && !wantsHtmlSvgFallback(cleanMessage)) {
+    const topic = extractCarouselTopic(cleanMessage);
+    const pack = await generateCarouselPromptPack({ userId, topic });
+    return {
+      ...pack,
+      content: pack.message,
+      agent: 'visual',
+      success: true,
+      carouselMode: 'prompt_pack_first',
+      metadata: { agent: 'visual', ...pack, carouselMode: 'prompt_pack_first' },
+    };
+  }
+
   // Auto-route: se a mensagem contém @perfil ou URL de rede social, vai direto ao researchAgent
   // Matches @handle (preceded by space/start, not part of an email) or social media URLs
   // Auto-route to videoAgent when video files are present or video keywords detected
@@ -184,7 +203,7 @@ export async function orchestrate({ userId, message, context = [], files = [] })
   // If user forced an agent, skip intent/planner entirely
   if (forcedAgent === 'visual') {
     const result = await FORCED_AGENTS.visual(args);
-    if (result?.type !== 'visual_prompts' && (result?.type !== 'visual' || !result?.previewUrl || !Array.isArray(result.files) || result.files.length === 0)) {
+    if (!['visual_prompts', 'carousel_prompt_pack'].includes(result?.type) && (result?.type !== 'visual' || !result?.previewUrl || !Array.isArray(result.files) || result.files.length === 0)) {
       logger.error('[Orchestrator] Visual forced route failed to produce files');
       return {
         content: 'Visual agent failed to generate image',
@@ -231,7 +250,7 @@ export async function orchestrate({ userId, message, context = [], files = [] })
 
   if (intencao.domain === 'visual') {
     const result = await FORCED_AGENTS.visual(args);
-    if (result?.type !== 'visual_prompts' && (result?.type !== 'visual' || !result?.previewUrl || !Array.isArray(result.files) || result.files.length === 0)) {
+    if (!['visual_prompts', 'carousel_prompt_pack'].includes(result?.type) && (result?.type !== 'visual' || !result?.previewUrl || !Array.isArray(result.files) || result.files.length === 0)) {
       logger.error('[Orchestrator] Visual intent route failed to produce files');
       return {
         content: 'Visual agent failed to generate image',

@@ -9,6 +9,7 @@ import { carouselApi, chatApi } from '../services/api.js';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
+import CarouselPromptPackCard from '../components/CarouselPromptPackCard.jsx';
 
 // ── Agent options the user can force ─────────────────────────────────────
 const AGENTS = [
@@ -23,8 +24,8 @@ const AGENTS = [
 
 const VISUAL_ACTIONS = [
   { label: 'Gerar prompts das imagens', prefix: 'Gerar prompts de imagem do carrossel: ' },
-  { label: 'Gerar HTML do carrossel', prefix: 'Gerar HTML do carrossel: ' },
   { label: 'Montar carrossel com imagens', prefix: 'Montar carrossel com imagens: ' },
+  { label: 'Fallback HTML/SVG', prefix: 'Finalizar com HTML/SVG sem imagens: ' },
 ];
 
 // ── Agent selector pill ───────────────────────────────────────────────────
@@ -75,29 +76,45 @@ function AgentPicker({ selected, onChange }) {
 }
 
 // ── Bot message renderer ──────────────────────────────────────────────────
+function DownloadButton({ url, label }) {
+  const handleDownload = async () => {
+    const resolved = resolveAssetUrl(url);
+    if (!resolved) return;
+    try {
+      const response = await fetch(resolved);
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filenameFromUrl(resolved);
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  return (
+    <button type="button" onClick={handleDownload}
+      className="inline-flex items-center gap-1.5 rounded-xl border border-gray-700 bg-gray-900/70 px-3 py-1.5 text-xs font-semibold text-gray-200 active:bg-gray-700">
+      <Download size={13} />
+      {label}
+    </button>
+  );
+}
+
 function BotMessage({ content, metadata }) {
+  if (metadata?.type === 'carousel_prompt_pack') {
+    return <CarouselPromptPackCard pack={metadata} resolveAssetUrl={resolveAssetUrl} filenameFromUrl={filenameFromUrl} />;
+  }
+
   const files = Array.isArray(metadata?.files) ? metadata.files : [];
   const imageFiles = files.filter(file => /\.(png|jpe?g|webp|gif)(\?|$)/i.test(file));
   const previewUrls = imageFiles.length
     ? imageFiles.map(resolveAssetUrl).filter(Boolean)
     : [resolveAssetUrl(metadata?.previewUrl || metadata?.imageUrl)].filter(Boolean);
   const downloadUrl = resolveAssetUrl(metadata?.downloadUrl || files[0]);
-  const handleDownload = async () => {
-    if (!downloadUrl) return;
-    try {
-      const response = await fetch(downloadUrl);
-      if (!response.ok) throw new Error('Download failed');
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filenameFromUrl(downloadUrl);
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      toast.error(err.message);
-    }
-  };
 
   return (
     <div className="space-y-1.5">
@@ -113,13 +130,8 @@ function BotMessage({ content, metadata }) {
                 onError={e => (e.target.style.display = 'none')} />
             ))}
           </div>
-          {downloadUrl && (
-            <button type="button" onClick={handleDownload}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-gray-700 bg-gray-900/70 px-3 py-1.5 text-xs font-semibold text-gray-200 active:bg-gray-700">
-              <Download size={13} />
-              Download
-            </button>
-          )}
+          {downloadUrl && <DownloadButton url={downloadUrl} label="Download" />}
+          {metadata?.zipUrl && <DownloadButton url={metadata.zipUrl} label="Download ZIP" />}
         </div>
       )}
       <div className="text-sm leading-relaxed prose prose-invert prose-sm max-w-none
@@ -223,7 +235,16 @@ export default function ChatPage() {
 
     try {
       const response = await chatApi.sendMessage(convId, text, files, agentHint);
-      setMessages(p => [...p.filter(m => m.id !== userMsg.id), response]);
+      const responseMetadata = {
+        ...(response.metadata || {}),
+        ...(response.type ? { type: response.type } : {}),
+        ...(response.planId ? { planId: response.planId } : {}),
+        ...(response.status ? { status: response.status } : {}),
+        ...(response.slides ? { slides: response.slides } : {}),
+        ...(response.nextStep ? { nextStep: response.nextStep } : {}),
+        ...(response.carouselMode ? { carouselMode: response.carouselMode } : {}),
+      };
+      setMessages(p => [...p.filter(m => m.id !== userMsg.id), { ...response, metadata: responseMetadata }]);
       setConversations(p => p.map(c =>
         c.id === convId ? { ...c, title: text.slice(0, 60), updated_at: new Date().toISOString() } : c,
       ));
@@ -252,7 +273,6 @@ export default function ChatPage() {
         topic,
         slides: 6,
         style: 'premium dark neon',
-        visualMode: 'html_svg_only',
       });
       setCarouselPlan(plan);
       toast.success('Prompts gerados para revisão');
@@ -260,27 +280,6 @@ export default function ChatPage() {
       toast.error(err.message);
     }
   }, [input]);
-
-  const renderCarouselPlan = useCallback(async () => {
-    if (!carouselPlan) return;
-    try {
-      const rendered = await carouselApi.render({
-        planId: carouselPlan.planId,
-        slides: carouselPlan.slides,
-        visualMode: 'html_svg_only',
-      });
-      setMessages(p => [...p, {
-        id: `carousel-${Date.now()}`,
-        role: 'assistant',
-        content: 'Carrossel renderizado com HTML/SVG usando os prompts aprovados como direção visual.',
-        metadata: { agent: 'visual', type: 'visual', files: rendered.files, previewUrl: rendered.previewUrl, downloadUrl: rendered.downloadUrl },
-      }]);
-      setCarouselPlan(null);
-      toast.success('Carrossel renderizado');
-    } catch (err) {
-      toast.error(err.message);
-    }
-  }, [carouselPlan]);
 
   // ── Conversation list ────────────────────────────────────────────────────
   if (view === 'list') return (
@@ -434,34 +433,7 @@ export default function ChatPage() {
 
         {agentHint === 'visual' && carouselPlan && (
           <div className="max-h-72 overflow-y-auto rounded-2xl border border-gray-700 bg-gray-900 p-2 space-y-2">
-            {carouselPlan.slides.map((slide, index) => (
-              <div key={slide.index} className="rounded-xl border border-gray-800 bg-gray-950/40 p-2 space-y-1.5">
-                <input
-                  value={slide.headline}
-                  onChange={e => setCarouselPlan(plan => ({
-                    ...plan,
-                    slides: plan.slides.map((s, i) => i === index ? { ...s, headline: e.target.value } : s),
-                  }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs font-bold text-gray-100"
-                />
-                <textarea
-                  value={slide.visualPrompt}
-                  onChange={e => setCarouselPlan(plan => ({
-                    ...plan,
-                    slides: plan.slides.map((s, i) => i === index ? { ...s, visualPrompt: e.target.value } : s),
-                  }))}
-                  rows={2}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-200 resize-none"
-                />
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={renderCarouselPlan}
-              className="w-full rounded-xl bg-brand-500 px-3 py-2 text-xs font-black text-white"
-            >
-              Gerar carrossel com estes prompts
-            </button>
+            <CarouselPromptPackCard pack={carouselPlan} resolveAssetUrl={resolveAssetUrl} filenameFromUrl={filenameFromUrl} />
           </div>
         )}
 

@@ -84,6 +84,12 @@
   width: min(100%, 1040px);
 }
 
+.auth-stage-single {
+  grid-template-columns: minmax(320px, 440px);
+  justify-content: center;
+  width: min(100%, 520px);
+}
+
 .auth-mascot-panel {
   position: relative;
   min-height: 520px;
@@ -401,6 +407,30 @@
   font-weight: 800;
   cursor: pointer;
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.auth-link-button {
+  text-decoration: none;
+}
+
+.auth-secondary-action {
+  display: flex;
+  justify-content: flex-end;
+  margin: -4px 0 14px;
+}
+
+.auth-secondary-action a,
+.auth-inline-link {
+  color: #fca5a5;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+  transition: color 180ms ease;
+}
+
+.auth-secondary-action a:hover,
+.auth-inline-link:hover {
+  color: #fff;
 }
 
 .auth-primary-button {

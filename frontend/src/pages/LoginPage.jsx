@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate }     from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore }    from '../store/auth.js';
 import { BASE, healthApi } from '../services/api.js';
 import { Eye, EyeOff, Lock, Mail, User, Wifi, WifiOff } from 'lucide-react';
@@ -212,6 +212,12 @@ export default function LoginPage() {
               </button>
             </label>
           </div>
+
+          {mode === 'login' && (
+            <div className="auth-secondary-action">
+              <Link to="/forgot-password">Esqueci minha senha</Link>
+            </div>
+          )}
 
           <button
             type="button"

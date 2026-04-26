@@ -37,6 +37,8 @@ api.interceptors.response.use(
 export const authApi = {
   register: d => api.post('/auth/register', d),
   login:    d => api.post('/auth/login',    d),
+  forgotPassword: d => api.post('/auth/forgot-password', d),
+  resetPassword:  d => api.post('/auth/reset-password', d),
   me:       () => api.get('/auth/me'),
 };
 
@@ -152,7 +154,16 @@ export const videoApi = {
 
 export const carouselApi = {
   plan: data => api.post('/carousel/plan', data),
-  render: data => api.post('/carousel/render', data),
+  render: data => api.post('/carousel/render', { ...data, manualFallback: true }),
+  uploadImages: (planId, files) => {
+    const fd = new FormData();
+    files.forEach((file, index) => fd.append(`slide_${String(index + 1).padStart(2, '0')}`, file));
+    return api.post(`/carousel/${planId}/images`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 2 * 60 * 1000,
+    });
+  },
+  finalize: planId => api.post(`/carousel/${planId}/finalize`, {}, { timeout: 2 * 60 * 1000 }),
 };
 
 // ── Memory ────────────────────────────────────────────────────────────────

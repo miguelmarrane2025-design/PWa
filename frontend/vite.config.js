@@ -62,7 +62,14 @@ export default defineConfig({
     })
   ],
   server: {
+    host: "0.0.0.0",
     port: 5173,
+    allowedHosts: [
+      "botsquad.online",
+      "www.botsquad.online",
+      "api.botsquad.online",
+      "161.97.78.124"
+    ],
     proxy: {
       "/api": {
         target: process.env.VITE_API_URL || "http://localhost:4000",
@@ -70,6 +77,15 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
     },
+  },
+  preview: {
+    host: "0.0.0.0",
+    allowedHosts: [
+      "botsquad.online",
+      "www.botsquad.online",
+      "api.botsquad.online",
+      "161.97.78.124"
+    ]
   },
   build: { outDir: "dist", sourcemap: false },
 });

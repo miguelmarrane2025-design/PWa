@@ -1,85 +1,88 @@
 import { Router } from 'express';
-import path from 'path';
+import multer from 'multer';
 import { promises as fs } from 'fs';
-import { v4 as uuidv4 } from 'uuid';
 import { requireAuth } from '../middleware/auth.js';
 import { config } from '../config/index.js';
-import { generateCarouselImagePrompts, renderCarouselPlanPng } from '../renderers/visual-renderer.js';
+import {
+  CAROUSEL_STATUS,
+  carouselUploadFields,
+  finalizeCarouselPlan,
+  generateCarouselPromptPack,
+  readCarouselPlan,
+  renderCarouselHtmlSvgFallback,
+  saveCarouselImages,
+  toPublicPromptPack,
+} from '../services/carousel-service.js';
 
 const router = Router();
-const PLAN_DIR = path.join(config.storage.jobs || path.join(path.dirname(config.storage.upload), 'jobs'), 'carousel');
+const ALLOWED_IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
+const ALLOWED_IMAGE_EXT = /\.(png|jpe?g|webp)$/i;
+
+const upload = multer({
+  dest: config.storage.temp,
+  limits: { fileSize: 30 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const extOk = ALLOWED_IMAGE_EXT.test(file.originalname ?? '');
+    const mimeOk = ALLOWED_IMAGE_MIME.has(file.mimetype);
+    if (extOk && mimeOk) return cb(null, true);
+    cb(Object.assign(new Error(`Formato inválido: ${file.originalname}. Use png, jpg, jpeg ou webp.`), { status: 400 }));
+  },
+});
 
 router.post('/plan', requireAuth, async (req, res) => {
-  const { topic, niche = '', slides = 6, style = 'premium dark neon', visualMode = 'html_svg_only' } = req.body || {};
+  const { topic, niche = '', slides = 6, style = 'premium dark neon' } = req.body || {};
   if (!topic?.trim()) return res.status(400).json({ error: 'topic obrigatório.' });
 
-  const generated = generateCarouselImagePrompts({
-    message: `carrossel sobre ${topic} ${niche} ${style} ${slides} slides`,
-  });
-  if (!generated.success) return res.status(400).json({ error: generated.message });
-
-  const planId = uuidv4();
-  const responseSlides = generated.prompts.slice(0, Number(slides) || 6).map(item => ({
-    index: item.slide,
-    headline: item.title,
-    body: item.text,
-    visualPrompt: item.image_prompt,
-    negative: 'cartoon, low quality, blurry, extra fingers, distorted guitar, unreadable text, watermark',
-    htmlFallback: item.visual_direction,
-    aspectRatio: item.aspect_ratio,
-    style: item.visual_style,
-  }));
-
-  await fs.mkdir(PLAN_DIR, { recursive: true });
-  await fs.writeFile(path.join(PLAN_DIR, `${planId}.json`), JSON.stringify({
-    planId,
+  const pack = await generateCarouselPromptPack({
     userId: req.user.id,
     topic,
     niche,
+    slides,
     style,
-    visualMode,
-    slides: responseSlides,
-    internalPlan: generated.plan,
-    createdAt: new Date().toISOString(),
-  }, null, 2));
+  });
 
-  res.status(201).json({ ok: true, planId, visualMode, slides: responseSlides });
+  res.status(201).json(pack);
 });
 
-router.post('/render', requireAuth, async (req, res) => {
-  const { planId, slides = [], visualMode = 'html_svg_only' } = req.body || {};
-  const stored = planId
-    ? await fs.readFile(path.join(PLAN_DIR, `${planId}.json`), 'utf8').then(JSON.parse).catch(() => null)
-    : null;
-  if (planId && (!stored || stored.userId !== req.user.id)) return res.status(404).json({ error: 'Plano não encontrado.' });
+router.post('/:planId/images', requireAuth, upload.fields(carouselUploadFields()), async (req, res) => {
+  const files = Object.values(req.files || {}).flat();
+  try {
+    const plan = await readCarouselPlan(req.params.planId, req.user.id);
+    if (!plan) return res.status(404).json({ error: 'Plano não encontrado.' });
 
-  const editedSlides = slides.length ? slides : stored?.slides;
-  if (!editedSlides?.length) return res.status(400).json({ error: 'slides obrigatórios.' });
+    const nextPlan = await saveCarouselImages({
+      plan: { ...plan, status: CAROUSEL_STATUS.WAITING_IMAGES },
+      filesByField: req.files || {},
+    });
 
-  const internalPlan = stored?.internalPlan || {};
-  const plan = {
-    tema: stored?.topic || 'Carrossel',
-    publico: internalPlan.publico || 'audiencia do carrossel',
-    promessa: internalPlan.promessa || 'conteudo claro em sequencia',
-    sequenciaNarrativa: editedSlides.map(s => `slide ${s.index}`),
-    ctaFinal: editedSlides[editedSlides.length - 1]?.body || '',
-    visualStyle: internalPlan.visualStyle || {
-      palette: { main: '#c6f135', soft: 'rgba(198,241,53,.22)', deep: 'rgba(42,215,255,.16)' },
-      mood: 'premium dark neon editorial',
-    },
-    slides: editedSlides.map((s, index) => ({
-      role: `slide ${index + 1}`,
-      title: s.headline,
-      text: s.body,
-      visual: s.htmlFallback || s.visualPrompt || 'direcao visual premium',
-      icon: iconFor(index),
-    })),
-  };
+    res.json({
+      ok: true,
+      type: 'carousel_images_received',
+      status: nextPlan.status,
+      planId: nextPlan.planId,
+      message: 'Imagens recebidas. Você já pode finalizar o carrossel.',
+      uploadedImages: nextPlan.uploadedImages.map(({ index, filename }) => ({ index, filename })),
+      nextStep: 'Clique em Finalizar carrossel.',
+    });
+  } finally {
+    await cleanupFiles(files);
+  }
+});
 
-  const rendered = await renderCarouselPlanPng({ plan });
+router.post('/:planId/finalize', requireAuth, async (req, res) => {
+  const plan = await readCarouselPlan(req.params.planId, req.user.id);
+  if (!plan) return res.status(404).json({ error: 'Plano não encontrado.' });
+  if (plan.status !== CAROUSEL_STATUS.IMAGES_RECEIVED && plan.status !== CAROUSEL_STATUS.RENDERED) {
+    return res.status(409).json({ error: 'Envie as 6 imagens antes de finalizar o carrossel.' });
+  }
+
+  const rendered = await finalizeCarouselPlan(plan);
   res.json({
     ok: rendered.success,
-    visualMode,
+    type: 'carousel_rendered',
+    status: CAROUSEL_STATUS.RENDERED,
+    planId: plan.planId,
+    message: 'Carrossel finalizado com as 6 imagens enviadas.',
     files: rendered.files,
     previewUrl: rendered.previewUrl,
     downloadUrl: rendered.downloadUrl,
@@ -87,8 +90,37 @@ router.post('/render', requireAuth, async (req, res) => {
   });
 });
 
-function iconFor(index) {
-  return ['guitar-wave', 'warning', 'pattern', 'controls', 'space-delay', 'checklist'][index % 6];
+router.post('/render', requireAuth, async (req, res) => {
+  const { planId, manualFallback = false } = req.body || {};
+  if (!manualFallback) {
+    return res.status(409).json({ error: 'Renderização HTML/SVG só é permitida como fallback manual explícito.' });
+  }
+
+  const plan = await readCarouselPlan(planId, req.user.id);
+  if (!plan) return res.status(404).json({ error: 'Plano não encontrado.' });
+
+  const rendered = await renderCarouselHtmlSvgFallback(plan);
+  res.json({
+    ok: rendered.success,
+    type: 'carousel_rendered',
+    status: plan.status,
+    planId,
+    message: 'Carrossel renderizado com HTML/SVG como fallback manual.',
+    files: rendered.files,
+    previewUrl: rendered.previewUrl,
+    downloadUrl: rendered.downloadUrl,
+    zipUrl: rendered.zipUrl,
+  });
+});
+
+router.get('/:planId', requireAuth, async (req, res) => {
+  const plan = await readCarouselPlan(req.params.planId, req.user.id);
+  if (!plan) return res.status(404).json({ error: 'Plano não encontrado.' });
+  res.json(toPublicPromptPack(plan));
+});
+
+async function cleanupFiles(files = []) {
+  await Promise.allSettled(files.map(file => fs.unlink(file.path).catch(() => {})));
 }
 
 export default router;

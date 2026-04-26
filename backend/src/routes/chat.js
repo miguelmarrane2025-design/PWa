@@ -9,6 +9,12 @@ import { orchestrate }   from '../agents/orchestrator.js';
 import { query }         from '../db/index.js';
 import { config }        from '../config/index.js';
 import { logger }        from '../lib/logger.js';
+import {
+  extractCarouselTopic,
+  generateCarouselPromptPack,
+  isCarouselRequest,
+  wantsHtmlSvgFallback,
+} from '../services/carousel-service.js';
 
 const router = Router();
 
@@ -153,18 +159,31 @@ router.post(
       );
       const context = history.reverse().slice(0, -1);
 
-      // Orchestrate
+      // Global carousel rule: prompt_pack_first unless the user explicitly asks for direct render.
       let result;
       const orchestrateStart = Date.now();
       try {
-        logger.info(`[AGENT] start user=${req.user.id} msg="${message.slice(0, 60)}"`);
-        result = await orchestrate({
-          userId:  req.user.id,
-          message,
-          context,
-          files:   req.files ?? [],
-        });
-        logger.info(`[AGENT] done agent=${result?.agent || 'unknown'} ms=${Date.now() - orchestrateStart} user=${req.user.id}`);
+        if (isCarouselRequest(message) && !wantsHtmlSvgFallback(message)) {
+          const topic = extractCarouselTopic(message);
+          const pack = await generateCarouselPromptPack({ userId: req.user.id, topic });
+          result = {
+            ...pack,
+            agent: 'visual',
+            success: true,
+            content: pack.message,
+            carouselMode: 'prompt_pack_first',
+          };
+          logger.info(`[AGENT] carousel prompt_pack_first plan=${pack.planId} user=${req.user.id}`);
+        } else {
+          logger.info(`[AGENT] start user=${req.user.id} msg="${message.slice(0, 60)}"`);
+          result = await orchestrate({
+            userId:  req.user.id,
+            message,
+            context,
+            files:   req.files ?? [],
+          });
+          logger.info(`[AGENT] done agent=${result?.agent || 'unknown'} ms=${Date.now() - orchestrateStart} user=${req.user.id}`);
+        }
       } catch (err) {
         logger.error(`[AGENT] error ms=${Date.now() - orchestrateStart} user=${req.user.id} err=${err.message}`);
         if (/^\[agent:visual\]/i.test(message)) {
@@ -188,7 +207,7 @@ router.post(
       }
 
       if ((result.agent === 'visual' || result.type === 'visual' || /^\[agent:visual\]/i.test(message))
-        && result.type !== 'visual_prompts'
+        && !['visual_prompts', 'carousel_prompt_pack'].includes(result.type)
         && (!result.previewUrl || !Array.isArray(result.files) || result.files.length === 0)) {
         result = {
           content: 'Visual agent failed to generate image',
@@ -220,8 +239,14 @@ router.post(
         ...(result.imageUrl ? { imageUrl: result.imageUrl } : {}),
         ...(result.previewUrl ? { previewUrl: result.previewUrl } : {}),
         ...(result.downloadUrl ? { downloadUrl: result.downloadUrl } : {}),
+        ...(result.zipUrl ? { zipUrl: result.zipUrl } : {}),
         ...(result.files ? { files: result.files } : {}),
         ...(result.prompts ? { prompts: result.prompts } : {}),
+        ...(result.planId ? { planId: result.planId } : {}),
+        ...(result.status ? { status: result.status } : {}),
+        ...(result.slides ? { slides: result.slides } : {}),
+        ...(result.nextStep ? { nextStep: result.nextStep } : {}),
+        ...(result.carouselMode ? { carouselMode: result.carouselMode } : {}),
         ...(result.type ? { type: result.type } : {}),
         ...(typeof result.success === 'boolean' ? { success: result.success } : {}),
       };
@@ -237,7 +262,13 @@ router.post(
         ...saved[0],
         ...(result.previewUrl ? { previewUrl: result.previewUrl } : {}),
         ...(result.downloadUrl ? { downloadUrl: result.downloadUrl } : {}),
+        ...(result.zipUrl ? { zipUrl: result.zipUrl } : {}),
         ...(result.files ? { files: result.files } : {}),
+        ...(result.planId ? { planId: result.planId } : {}),
+        ...(result.status ? { status: result.status } : {}),
+        ...(result.slides ? { slides: result.slides } : {}),
+        ...(result.nextStep ? { nextStep: result.nextStep } : {}),
+        ...(result.carouselMode ? { carouselMode: result.carouselMode } : {}),
         ...(result.type ? { type: result.type } : {}),
         ...(typeof result.success === 'boolean' ? { success: result.success } : {}),
         ...(result.previewUrl ? { message: result.content } : {}),

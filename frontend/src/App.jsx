@@ -4,6 +4,8 @@ import { useAuthStore }  from './store/auth.js';
 import { settingsApi }   from './services/api.js';
 import Layout            from './layouts/Layout.jsx';
 import LoginPage         from './pages/LoginPage.jsx';
+import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx';
+import ResetPasswordPage from './pages/ResetPasswordPage.jsx';
 import HomePage          from './pages/HomePage.jsx';
 import ChatPage          from './pages/ChatPage.jsx';
 import AudioPage         from './pages/AudioPage.jsx';
@@ -51,6 +53,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
         <Route index element={<HomePage />} />
         {/* These routes require an API key */}

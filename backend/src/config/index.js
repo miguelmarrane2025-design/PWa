@@ -113,4 +113,13 @@ export const config = {
 
   // ── Backend public URL (for remote access) ───────────────────────────────
   publicUrl: optional("BACKEND_PUBLIC_URL", `http://localhost:${toInt(process.env.PORT || process.env.BACKEND_PORT || "3000", 3000)}`),
+  appPublicUrl: optional("APP_PUBLIC_URL", optional("FRONTEND_PUBLIC_URL", "http://localhost:5173")),
+  smtp: {
+    host: optional("SMTP_HOST"),
+    port: toInt(optional("SMTP_PORT", "587"), 587),
+    user: optional("SMTP_USER"),
+    pass: optional("SMTP_PASS"),
+    from: optional("SMTP_FROM", optional("SMTP_USER", "BotSquad <no-reply@botsquad.online>")),
+    secure: optional("SMTP_SECURE", "").toLowerCase() === "true",
+  },
 };

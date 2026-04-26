@@ -79,7 +79,7 @@ export async function renderCarouselPlanPng({ plan, files = [] }) {
   return {
     success: true,
     type: 'visual',
-    message: 'Carrossel gerado com HTML/SVG',
+    message: 'Carrossel renderizado por solicitacao manual',
     files: renderedFiles,
     previewUrl,
     downloadUrl,
@@ -100,22 +100,29 @@ export function generateCarouselImagePrompts({ message }) {
   }
 
   const aspectRatio = /feed|quadrado|1:1/i.test(message) ? '1:1' : '4:5';
-  const prompts = plan.slides.map((slide, index) => ({
-    slide: index + 1,
-    title: slide.title,
-    text: slide.text,
-    visual_direction: slide.visual,
-    image_prompt: [
-      `${plan.visualStyle.mood}.`,
-      `Cena principal: ${slide.visual}.`,
-      `Tema: ${plan.tema}.`,
-      `Composicao para carrossel de Instagram, alto contraste, area limpa para headline, sem texto na imagem.`,
-      `Slide ${index + 1}: ${slide.role}.`,
-    ].join(' '),
-    aspect_ratio: aspectRatio,
-    visual_style: plan.visualStyle.mood,
-    notes: 'sem texto na imagem, deixar espaço para headline',
-  }));
+  const prompts = plan.slides.map((slide, index) => {
+    const cleanSpace = slide.emptySpace || (index % 2 === 0 ? 'left' : 'top');
+    const visualStyle = slide.visualStyle || plan.visualStyle.mood;
+    return {
+      slide: index + 1,
+      title: slide.title,
+      text: slide.text,
+      visual_concept: slide.visual,
+      visual_direction: slide.visual,
+      image_prompt: buildImagePrompt({
+        plan,
+        slide,
+        cleanSpace,
+        visualStyle,
+      }),
+      negative_prompt: slide.negativePrompt || defaultNegativePrompt(plan),
+      composition: slide.composition || `subject placed away from the ${cleanSpace} headline area, vertical 4:5 editorial crop, clear negative space`,
+      aspect_ratio: aspectRatio,
+      visual_style: visualStyle,
+      visual_purpose: slide.visualPurpose || `Connects the slide idea to a concrete scene about ${plan.tema}, avoiding generic icons or abstract symbols.`,
+      notes: 'sem texto na imagem, deixar espaço para headline',
+    };
+  });
 
   return {
     success: true,
@@ -132,7 +139,7 @@ function createCarouselPlan(rawMessage) {
   if (!tema || tema.length < 3) return null;
 
   const lower = tema.toLowerCase();
-  const isWorshipTone = /worship|timbre|timbres|guitarra|guitar|mix|ir|delay|reverb|eq|grave|agudo|medio|m[ée]dio/.test(lower);
+  const isWorshipTone = /worship|timbre|timbres|guitarra|guitar|mix|audio|áudio|ir|delay|reverb|eq|equaliza|equalizacao|equalização|grave|agudo|medio|m[ée]dio|pedaleira|pedalboard|plugin|daw|palco|home studio/.test(lower);
   const publico = isWorshipTone
     ? 'guitarristas de worship, produtores e musicos de igreja'
     : `pessoas interessadas em ${tema}`;
@@ -150,7 +157,7 @@ function createCarouselPlan(rawMessage) {
     ctaFinal: slides[slides.length - 1].text,
     visualStyle: {
       palette: pickAccent(tema),
-      mood: isWorshipTone ? 'palco escuro, neon tecnico, ondas sonoras e EQ' : 'editorial tecnico, alto contraste e simbolos simples',
+      mood: isWorshipTone ? 'premium realistic cinematic worship music production editorial' : 'premium realistic editorial photography',
     },
     slides,
   };
@@ -162,42 +169,60 @@ function worshipToneSlides() {
       role: 'dor',
       title: 'Sua guitarra some na mix?',
       text: 'O problema nem sempre e volume. Muitas vezes e timbre mal encaixado.',
-      visual: 'onda sonora + guitarra',
+      visual: 'worship guitarist playing electric guitar on a dark modern church stage, pedalboard lights glowing on the floor',
+      composition: 'guitarist on right third, empty dark space on left for headline, pedalboard lights create leading lines toward the subject',
+      visualPurpose: 'Mostra imediatamente o contexto real do publico: guitarra worship ao vivo e o problema de encaixe na mix.',
+      emptySpace: 'left',
       icon: 'guitar-wave',
     },
     {
       role: 'erro grave',
       title: 'Graves demais embolam',
       text: 'Graves excessivos disputam espaco com baixo e bumbo.',
-      visual: 'faixa grave destacada',
+      visual: 'close-up of an electric guitar cable near a bass guitar and kick drum inside a dark studio live room',
+      composition: 'low instruments and cable in lower right, clean shadow area at top for headline, shallow depth separating the background',
+      visualPurpose: 'Traduz visualmente a disputa de graves entre guitarra, baixo e bumbo sem usar simbolos genericos.',
+      emptySpace: 'top',
       icon: 'low-eq',
     },
     {
       role: 'erro agudo',
       title: 'Agudo demais cansa',
       text: 'Presenca exagerada deixa o som estridente e dificil de ouvir.',
-      visual: 'curva de EQ subindo',
+      visual: 'producer adjusting a guitar EQ plugin on a DAW screen, electric guitar resting beside studio monitors, plugin details softly blurred with no readable text',
+      composition: 'hands and guitar on lower left, DAW screen glow on right, clean darker area at top left for headline',
+      visualPurpose: 'Liga o excesso de agudos a uma decisao real de mix e equalizacao, com o EQ como elemento visual sem texto legivel.',
+      emptySpace: 'top left',
       icon: 'high-eq',
     },
     {
       role: 'solucao tonal',
       title: 'Medios carregam o corpo',
       text: 'O corpo da guitarra aparece quando os medios estao no lugar certo.',
-      visual: 'medidor/EQ nos medios',
+      visual: 'home studio scene with guitarist recording a Stratocaster through an audio interface, studio monitors and warm rack lights in the background',
+      composition: 'guitar neck and player hands on right third, soft studio background on left with clean space for headline',
+      visualPurpose: 'Mostra a busca de corpo e definicao do timbre em uma cena real de gravacao e mix.',
+      emptySpace: 'left',
       icon: 'mid-eq',
     },
     {
       role: 'ambiencia',
       title: 'Worship precisa respirar',
       text: 'Delay, reverb e IR precisam abrir espaco sem esconder a base.',
-      visual: 'ambiente, delay, ondas',
+      visual: 'close-up of a premium guitar pedalboard with delay, reverb and amp modeler knobs glowing on a church stage floor with haze in the background',
+      composition: 'pedalboard across bottom third, stage haze and clean dark space above for headline, diagonal cables add depth',
+      visualPurpose: 'Representa ambiencia worship por meio de pedais, IR e palco, elementos diretamente ligados ao nicho.',
+      emptySpace: 'top',
       icon: 'space-delay',
     },
     {
       role: 'cta',
       title: 'Salve este guia',
       text: 'Use como checklist antes de tocar ao vivo ou gravar.',
-      visual: 'checklist + guitarra',
+      visual: 'musician tuning an electric guitar beside a pedalboard before a worship service, modern church stage lights warming up in the background',
+      composition: 'musician and guitar on left third, empty dark space on right for final headline, stage lights create depth',
+      visualPurpose: 'Fecha com uma situacao pratica de preparacao antes do culto ou show, reforcando o uso do guia.',
+      emptySpace: 'right',
       icon: 'checklist',
     },
   ];
@@ -210,45 +235,93 @@ function genericSlides(topic) {
       role: 'gancho',
       title: `${t} sem complicar`,
       text: 'Comece pelo problema real que a pessoa sente antes de explicar conceitos.',
-      visual: 'alvo + linha de atencao',
+      visual: `real person facing a concrete decision related to ${topic} in a premium editorial environment`,
+      composition: 'subject on right third, clean negative space on left for headline, vertical 4:5 crop',
+      visualPurpose: 'Apresenta o tema como uma situacao real e reconhecivel, em vez de um simbolo abstrato.',
+      emptySpace: 'left',
       icon: 'target',
     },
     {
       role: 'contexto',
       title: 'O erro mais comum',
       text: 'A maioria tenta resolver o sintoma e deixa a causa principal escondida.',
-      visual: 'alerta + camadas',
+      visual: `behind-the-scenes editorial scene showing a messy setup or workflow problem connected to ${topic}`,
+      composition: 'problem detail in lower half, clean darker area at top for headline, shallow depth of field',
+      visualPurpose: 'Mostra o erro como um contexto visual concreto, nao como alerta ou icone generico.',
+      emptySpace: 'top',
       icon: 'warning',
     },
     {
       role: 'principio',
       title: 'Procure o padrao',
       text: 'Quando voce identifica o padrao, a decisao fica mais simples e repetivel.',
-      visual: 'grade + conexoes',
+      visual: `expert reviewing real materials, tools or references connected to ${topic} on a clean desk`,
+      composition: 'hands and materials on lower right, clean surface on left for headline, editorial overhead angle',
+      visualPurpose: 'Conecta o principio de padrao a uma analise visual tangivel e profissional.',
+      emptySpace: 'left',
       icon: 'pattern',
     },
     {
       role: 'metodo',
       title: 'Ajuste uma coisa por vez',
       text: 'Teste uma mudanca, observe o resultado e evite conclusoes apressadas.',
-      visual: 'controles + medidor',
+      visual: `close-up of a person making one careful adjustment to a real tool or workspace related to ${topic}`,
+      composition: 'adjustment action on right third, clean soft background on left for headline, macro editorial framing',
+      visualPurpose: 'Transforma o metodo em uma acao concreta e facil de entender visualmente.',
+      emptySpace: 'left',
       icon: 'controls',
     },
     {
       role: 'aplicacao',
       title: 'Transforme em checklist',
       text: 'Um bom processo reduz erro e deixa o resultado mais consistente.',
-      visual: 'lista + progresso',
+      visual: `premium workspace with real project materials for ${topic}, organized into a simple repeatable process without visible text`,
+      composition: 'organized materials along bottom and right edges, clean open area at top left for headline',
+      visualPurpose: 'Comunica processo e organizacao usando objetos reais do tema, sem depender de checklist desenhado.',
+      emptySpace: 'top left',
       icon: 'progress',
     },
     {
       role: 'cta',
       title: 'Salve para revisar',
       text: 'Use este carrossel como guia rapido antes da proxima decisao.',
-      visual: 'marcador + checklist',
+      visual: `person saving or reviewing references related to ${topic} in a premium realistic work environment, no readable screens`,
+      composition: 'person and device on left, empty calm space on right for headline, cinematic editorial crop',
+      visualPurpose: 'Fecha com uma cena de revisao realista que combina com o CTA de salvar o conteudo.',
+      emptySpace: 'right',
       icon: 'checklist',
     },
   ];
+}
+
+function buildImagePrompt({ plan, slide, cleanSpace, visualStyle }) {
+  const environment = plan.publico.includes('worship')
+    ? 'in a modern church stage, home studio or music production environment'
+    : `in an environment directly related to ${plan.tema}`;
+  const lighting = plan.publico.includes('worship')
+    ? 'soft haze, blue and lime green rim lighting, practical pedalboard and monitor lights'
+    : 'cinematic editorial lighting, realistic shadows, refined contrast';
+  const palette = plan.publico.includes('worship')
+    ? 'deep blacks, blue highlights, lime green accents, warm skin tones'
+    : 'premium neutral palette with controlled accent colors and natural skin tones';
+
+  return [
+    `realistic cinematic editorial photo of ${slide.visual}`,
+    environment,
+    lighting,
+    'shot on a 50mm lens, shallow depth of field, vertical 4:5 composition',
+    `${palette}`,
+    `${visualStyle}, premium editorial look`,
+    `empty clean space on ${cleanSpace} for bold headline`,
+    'no text, no watermark',
+  ].join(', ');
+}
+
+function defaultNegativePrompt(plan) {
+  const nicheAvoid = plan.publico.includes('worship')
+    ? ', distorted guitar, extra fingers, deformed hands, unreadable DAW labels, fake brand logos'
+    : ', generic icons, abstract symbols, infographic, random charts';
+  return `cartoon, illustration, basic drawing, logo, text, watermark, blurry, low quality, messy background, cluttered headline area${nicheAvoid}`;
 }
 
 function isValidPlan(plan) {
