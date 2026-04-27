@@ -1,0 +1,48 @@
+{
+  "good_examples": [
+    {
+      "label": "Slide de abertura — guitarrista worship no palco",
+      "topic": "Como encaixar guitarra na mix worship",
+      "slide": 1,
+      "title": "Sua guitarra some na mix?",
+      "text": "O problema nem sempre é volume. Muitas vezes é timbre mal encaixado.",
+      "image_prompt": "realistic cinematic photo of a worship guitarist playing electric guitar on a dark modern church stage, pedalboard lights glowing on the floor, soft haze, blue and lime green rim lighting, shallow depth of field, 50mm lens, premium editorial look, empty dark space on left for bold headline, no text, no watermark",
+      "negative_prompt": "cartoon, illustration, logo, text, watermark, blurry, low quality, distorted guitar, extra fingers, deformed hands, messy background",
+      "composition": "guitarist positioned on the right third, pedalboard in the foreground, empty dark space on the left for typography",
+      "visual_purpose": "Mostra o contexto real do público: guitarra worship ao vivo com problema de encaixe na mix.",
+      "why_good": "Cena realista, específica ao nicho, espaço para headline, prompt cinematográfico detalhado"
+    },
+    {
+      "label": "Slide de problema — pedalboard e amplificador",
+      "topic": "Como encaixar guitarra na mix worship",
+      "slide": 2,
+      "title": "Amplificador X Pedaleira: quem manda?",
+      "text": "O timbre começa na fonte. Entender a cadeia de sinal muda tudo.",
+      "image_prompt": "close-up cinematic shot of a high-end guitar pedalboard with glowing LED indicators and vintage tube amplifier in the background, dimly lit studio environment, warm amber and teal tones, selective focus on pedalboard knobs, bokeh background, premium product photography style, no text, no watermark",
+      "negative_prompt": "cartoon, logo, text, watermark, generic icons, abstract, blurry, low quality, over-exposed",
+      "composition": "pedalboard fills lower 2/3 of frame, amp softly blurred in upper background, empty top-left space for headline",
+      "visual_purpose": "Conecta visualmente os dois elementos da cadeia de sinal que o slide discute.",
+      "why_good": "Específico ao tema, cena real, sem ícones abstratos, espaço para tipografia"
+    }
+  ],
+  "bad_examples": [
+    {
+      "label": "Onda sonora genérica",
+      "image_prompt": "sound wave with guitar icon, abstract background, blue wave pattern",
+      "why_bad": "Onda sonora é abstrata demais. Não mostra o contexto real do público. Ícone de guitarra é genérico.",
+      "issues": ["genérico", "abstrato", "sem cena real", "não parece editorial"]
+    },
+    {
+      "label": "Curva de EQ abstrata",
+      "image_prompt": "equalizer curve on dark background, frequency graph, audio waveform visualization",
+      "why_bad": "Curva de EQ é símbolo genérico. Poderia ser de qualquer assunto de áudio. Sem contexto de worship ou guitarra.",
+      "issues": ["genérico", "sem especificidade", "sem cena real", "abstrato"]
+    },
+    {
+      "label": "Checklist simples",
+      "image_prompt": "checklist on dark background with guitar icon and audio notes",
+      "why_bad": "Checklist é o visual mais genérico possível. Não transmite nada sobre o tema.",
+      "issues": ["genérico", "não parece real", "sem cena visual", "sem impacto"]
+    }
+  ]
+}

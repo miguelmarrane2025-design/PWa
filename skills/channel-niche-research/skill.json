@@ -1,0 +1,42 @@
+{
+  "id": "channel_niche_research_squad",
+  "name": "Channel Niche Research Squad",
+  "version": "1.0.0",
+  "domain": "channel_growth",
+  "description": "Pesquisa nichos, subnichos e oportunidades específicas para canais no YouTube, TikTok, Instagram/Reels, Kwai e canais dark/faceless. Avalia demanda, saturação, retenção, monetização, dificuldade de produção e potencial de conteúdo recorrente. Diferente do Niche Visionary Squad (que olha mercado/produto), este squad olha canal, plataforma, formato e monetização de conteúdo.",
+  "executor": "channelNicheResearchSquad",
+  "minScore": 85,
+  "reviewAgent": "channelNicheReviewerAgent",
+  "memoryKey": "channel-niche-research",
+  "inputSchema": {
+    "message": "string",
+    "briefing": {
+      "goal": "crescer canal|criar canal dark|monetizar|vender produto|gerar audiência",
+      "platforms": ["youtube", "tiktok", "instagram", "kwai"],
+      "interests": "array",
+      "assets": "array",
+      "products": "array",
+      "constraints": {
+        "faceless": "boolean",
+        "lowBudget": "boolean",
+        "manualPosting": "boolean",
+        "noCopyrightRisk": "boolean"
+      },
+      "preferredNiches": "array",
+      "avoidNiches": "array",
+      "language": "string",
+      "region": "string"
+    }
+  },
+  "outputSchema": {
+    "recommendedNiches": "array",
+    "rejectedNiches": "array",
+    "channelStrategyDraft": "object",
+    "review": "object"
+  },
+  "tags": [
+    "canal", "nicho", "youtube", "tiktok", "instagram", "faceless", "dark channel",
+    "monetização", "retenção", "formatos", "worship", "guitarra", "gospel", "cristão"
+  ],
+  "differenceFromNicheVisionarySquad": "NicheVisionarySquad → mercado amplo, produto, blue ocean. ChannelNicheResearchSquad → canal específico, plataforma, formato, retenção, produção."
+}

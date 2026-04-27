@@ -77,6 +77,7 @@ export async function generateCarouselPromptPack({ userId, topic, niche = '', st
     message: 'Aqui estão os prompts das 6 imagens. Gere as imagens e envie de volta para eu finalizar o carrossel.',
     slides: responseSlides,
     nextStep: 'Envie 6 imagens quando estiver pronto.',
+    allowManualFallback: false,
     internalPlan: generated.plan,
     uploadedImages: [],
     rendered: null,
@@ -225,6 +226,7 @@ export function toPublicPromptPack(plan) {
     message: plan.message,
     slides: plan.slides,
     nextStep: plan.nextStep,
+    allowManualFallback: Boolean(plan.allowManualFallback),
   };
 }
 

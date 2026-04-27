@@ -53,13 +53,13 @@ function ProviderCard({ provider, selected, onSelect }) {
         </div>
         <span className={clsx(
           'rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em]',
-          provider.hasVerified
+          provider.configured
             ? 'border-emerald-500/30 bg-emerald-500/[0.12] text-emerald-300'
-            : provider.active
+            : provider.enabled
               ? 'border-amber-500/30 bg-amber-500/[0.12] text-amber-200'
               : 'border-white/10 bg-white/[0.06] text-zinc-300',
         )}>
-          {provider.hasVerified ? 'verified' : provider.active ? 'enabled' : 'setup'}
+          {provider.configured ? 'configured' : provider.enabled ? 'enabled' : 'setup'}
         </span>
       </div>
 
@@ -113,14 +113,55 @@ function KeyCard({ item, onDelete }) {
   );
 }
 
+function IntegrationCard({ item, storedKey, onOpenSettings }) {
+  return (
+    <div className="rounded-[24px] border border-white/[0.08] bg-[#111116] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-white">{item.label}</p>
+          <p className="mt-1 text-xs text-zinc-500">{item.description}</p>
+          <p className="mt-2 text-[11px] text-zinc-500">{item.envVar}</p>
+        </div>
+        <span className={clsx(
+          'rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em]',
+          item.configured
+            ? 'border-emerald-500/30 bg-emerald-500/[0.12] text-emerald-300'
+            : item.enabled
+              ? 'border-amber-500/30 bg-amber-500/[0.12] text-amber-200'
+              : 'border-white/10 bg-white/[0.06] text-zinc-300',
+        )}>
+          {item.status}
+        </span>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">Masked key</p>
+        <p className="mt-2 font-mono text-sm text-zinc-300">{storedKey?.key_preview || item.maskedKey || 'not configured'}</p>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button onClick={onOpenSettings} className="btn-ghost rounded-full px-3 py-2 text-xs">
+          Configurar em Keys
+        </button>
+        <button onClick={onOpenSettings} className="btn-ghost rounded-full px-3 py-2 text-xs">
+          Testar conexão
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const setupMode = searchParams.get('setup') === '1';
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [providers, setProviders] = useState([]);
+  const [socialProviders, setSocialProviders] = useState([]);
   const [keys, setKeys] = useState([]);
+  const [systemIntegrations, setSystemIntegrations] = useState([]);
   const [selectedProviderId, setSelectedProviderId] = useState('openai');
   const [driveStatus, setDriveStatus] = useState(null);
   const [form, setForm] = useState({ key: '', model: '' });
@@ -128,10 +169,11 @@ export default function SettingsPage() {
   const [modelLoading, setModelLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const allSelectableProviders = [...providers, ...socialProviders];
 
   const selectedProvider = useMemo(
-    () => providers.find(item => item.id === selectedProviderId) || providers[0],
-    [providers, selectedProviderId],
+    () => allSelectableProviders.find(item => item.id === selectedProviderId) || allSelectableProviders[0],
+    [allSelectableProviders, selectedProviderId],
   );
 
   const providerMeta = PROVIDER_META[selectedProvider?.id] || { label: selectedProvider?.label || selectedProvider?.id || 'Provider' };
@@ -144,22 +186,33 @@ export default function SettingsPage() {
   );
   const currentKeys = keysByProvider[selectedProvider?.id] || [];
   const hasAnyVerifiedKey = keys.some(item => item.verified);
+  const hasAnyConfiguredProvider = providers.some(item => item.configured);
+  const socialResearchIntegrations = systemIntegrations.filter(item => item.category === 'social_research');
+  const storageIntegrations = systemIntegrations.filter(item => item.category === 'storage_memory');
+  const displayCount = value => (loadError ? '—' : value);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [providerData, driveData] = await Promise.all([
-        catalogApi.getProviders(),
+      const [providerData, authProviderData, keyData, integrationData, driveData] = await Promise.all([
+        catalogApi.getSystemProviders(),
+        settingsApi.getProviders().catch(() => []),
+        settingsApi.getApiKeys().catch(() => []),
+        settingsApi.getSystemIntegrations().catch(() => catalogApi.getIntegrations().catch(() => ({ integrations: [], items: [] }))),
         driveApi.status().catch(() => ({ configured: false, connected: false })),
       ]);
 
-      setProviders(providerData.items || []);
-      setKeys(providerData.keys || []);
+      setProviders(providerData.providers || []);
+      setSocialProviders((authProviderData || []).filter(item => item.category === 'integration'));
+      setKeys(Array.isArray(keyData) ? keyData : []);
+      setSystemIntegrations(integrationData.integrations || integrationData.items || []);
       setDriveStatus(driveData);
-      if (!selectedProviderId && providerData.items?.length) {
-        setSelectedProviderId(providerData.items[0].id);
+      setLoadError('');
+      if (!selectedProviderId && providerData.providers?.length) {
+        setSelectedProviderId(providerData.providers[0].id);
       }
     } catch (error) {
+      setLoadError('backend/settings endpoint indisponível');
       toast.error(error.message || 'Nao foi possivel carregar os providers');
     } finally {
       setLoading(false);
@@ -171,11 +224,11 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (!providers.length) return;
-    if (!providers.some(item => item.id === selectedProviderId)) {
-      setSelectedProviderId(providers[0].id);
+    if (!allSelectableProviders.length) return;
+    if (!allSelectableProviders.some(item => item.id === selectedProviderId)) {
+      setSelectedProviderId(allSelectableProviders[0].id);
     }
-  }, [providers, selectedProviderId]);
+  }, [allSelectableProviders, selectedProviderId]);
 
   useEffect(() => {
     if (!selectedProvider) return;
@@ -249,8 +302,8 @@ export default function SettingsPage() {
 
     setToggling(true);
     try {
-      await settingsApi.setProviderState(selectedProvider.id, !selectedProvider.active, selectedProvider.priority || 0);
-      toast.success(`${providerMeta.label} ${selectedProvider.active ? 'desativado' : 'ativado'}`);
+      await settingsApi.setProviderState(selectedProvider.id, !selectedProvider.enabled, selectedProvider.priority || 0);
+      toast.success(`${providerMeta.label} ${selectedProvider.enabled ? 'desativado' : 'ativado'}`);
       await load();
     } catch (error) {
       toast.error(error.message || 'Nao foi possivel atualizar o provider');
@@ -298,7 +351,7 @@ export default function SettingsPage() {
                 API Keys e providers ligados ao backend real.
               </h2>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-300 sm:text-base">
-                Nada aqui e placeholder: os cards leem o catalogo do backend, salvam em PostgreSQL e atualizam o estado ativo/inativo sem quebrar auth ou rotas existentes.
+                Nada aqui e placeholder: os cards leem o catalogo seguro do backend, mostram status mascarado do ambiente e continuam permitindo salvar chaves do usuario sem expor segredo.
               </p>
             </div>
 
@@ -306,18 +359,18 @@ export default function SettingsPage() {
               <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Overview</p>
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <div className="rounded-2xl border border-white/[0.08] bg-white/[0.05] p-4">
-                  <p className="text-3xl font-black text-white">{providers.length}</p>
-                  <p className="mt-1 text-xs text-zinc-500">providers suportados</p>
+                  <p className="text-3xl font-black text-white">{displayCount(providers.length)}</p>
+                  <p className="mt-1 text-xs text-zinc-500">AI providers</p>
                 </div>
                 <div className="rounded-2xl border border-white/[0.08] bg-white/[0.05] p-4">
-                  <p className="text-3xl font-black text-white">{keys.length}</p>
-                  <p className="mt-1 text-xs text-zinc-500">chaves salvas</p>
+                  <p className="text-3xl font-black text-white">{displayCount(providers.filter(item => item.configured).length)}</p>
+                  <p className="mt-1 text-xs text-zinc-500">providers configurados</p>
                 </div>
               </div>
               <div className="mt-4 space-y-3">
                 <div className="flex items-center justify-between rounded-2xl border border-white/[0.08] bg-white/[0.05] px-3 py-3">
-                  <span className="text-sm text-zinc-200">Providers verificados</span>
-                  <span className="text-sm font-bold text-white">{keys.filter(item => item.verified).length}</span>
+                  <span className="text-sm text-zinc-200">Chaves salvas no usuario</span>
+                  <span className="text-sm font-bold text-white">{displayCount(keys.length)}</span>
                 </div>
                 <div className="flex items-center justify-between rounded-2xl border border-white/[0.08] bg-white/[0.05] px-3 py-3">
                   <span className="text-sm text-zinc-200">Google Drive</span>
@@ -328,7 +381,16 @@ export default function SettingsPage() {
                     {driveStatus?.connected ? 'connected' : driveStatus?.configured ? 'available' : 'disabled'}
                   </span>
                 </div>
+                <div className="flex items-center justify-between rounded-2xl border border-white/[0.08] bg-white/[0.05] px-3 py-3">
+                  <span className="text-sm text-zinc-200">Social APIs</span>
+                  <span className="text-sm font-bold text-white">{displayCount(socialResearchIntegrations.filter(item => item.configured).length)}</span>
+                </div>
               </div>
+              {loadError && (
+                <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  {loadError}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -338,7 +400,7 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Providers</p>
-            <h3 className="mt-2 text-2xl font-black text-white">Catalogo conectado</h3>
+            <h3 className="mt-2 text-2xl font-black text-white">AI Providers</h3>
           </div>
           <button onClick={load} className="btn-ghost rounded-full px-4 py-2.5 text-sm">
             <RefreshCw size={15} />
@@ -352,6 +414,40 @@ export default function SettingsPage() {
               provider={provider}
               selected={provider.id === selectedProvider?.id}
               onSelect={setSelectedProviderId}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Social Research APIs</p>
+          <h3 className="mt-2 text-2xl font-black text-white">YouTube, RapidAPI, Apify e fallbacks</h3>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {socialResearchIntegrations.map(item => (
+            <IntegrationCard
+              key={item.id}
+              item={item}
+              storedKey={(keysByProvider[item.id] || [])[0]}
+              onOpenSettings={() => setSelectedProviderId(item.id)}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Storage & Memory</p>
+          <h3 className="mt-2 text-2xl font-black text-white">Google Drive, Drive Memory e Dropbox</h3>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {storageIntegrations.map(item => (
+            <IntegrationCard
+              key={item.id}
+              item={item}
+              storedKey={(keysByProvider[item.id] || [])[0]}
+              onOpenSettings={() => item.id === 'google_drive' ? navigate('/integrations') : setSelectedProviderId(item.id)}
             />
           ))}
         </div>
@@ -377,13 +473,42 @@ export default function SettingsPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-[24px] border border-white/[0.08] bg-black/20 p-4">
                 <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Status</p>
-                <p className="mt-3 text-lg font-bold text-white">{selectedProvider.hasVerified ? 'Verified' : 'Waiting setup'}</p>
-                <p className="mt-1 text-sm text-zinc-500">Chaves validas para este provider.</p>
+                <p className="mt-3 text-lg font-bold text-white">{selectedProvider.configured ? 'Configured' : 'Waiting setup'}</p>
+                <p className="mt-1 text-sm text-zinc-500">Provider configurado no ambiente ou no backend do usuario.</p>
               </div>
               <div className="rounded-[24px] border border-white/[0.08] bg-black/20 p-4">
                 <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Activation</p>
-                <p className="mt-3 text-lg font-bold text-white">{selectedProvider.active ? 'Enabled' : 'Disabled'}</p>
-                <p className="mt-1 text-sm text-zinc-500">Controle manual por provider.</p>
+                <p className="mt-3 text-lg font-bold text-white">{selectedProvider.enabled ? 'Enabled' : 'Disabled'}</p>
+                <p className="mt-1 text-sm text-zinc-500">OpenAI fica ativa por padrao quando configurada.</p>
+              </div>
+              <div className="rounded-[24px] border border-white/[0.08] bg-black/20 p-4">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Masked key</p>
+                <p className="mt-3 text-sm font-mono text-white">{selectedProvider.maskedKey || 'not configured'}</p>
+                <p className="mt-1 text-sm text-zinc-500">Nunca exibimos a chave completa no frontend.</p>
+              </div>
+              <div className="rounded-[24px] border border-white/[0.08] bg-black/20 p-4">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Default models</p>
+                <p className="mt-3 text-sm font-semibold text-white">{selectedProvider.models?.strong || 'N/D'}</p>
+                <p className="mt-1 text-xs text-zinc-500">strong</p>
+                <p className="mt-3 text-sm font-semibold text-white">{selectedProvider.models?.mini || 'N/D'}</p>
+                <p className="mt-1 text-xs text-zinc-500">mini</p>
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-white/[0.08] bg-black/20 p-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-white">Provider status do ambiente</p>
+                  <p className="mt-1 text-xs text-zinc-500">Leitura segura de `backend/.env` e `.env`, sem expor segredos.</p>
+                </div>
+                <span className={clsx(
+                  'rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em]',
+                  selectedProvider.configured
+                    ? 'border-emerald-500/30 bg-emerald-500/[0.12] text-emerald-300'
+                    : 'border-white/10 bg-white/[0.06] text-zinc-300',
+                )}>
+                  {selectedProvider.status || 'unknown'}
+                </span>
               </div>
             </div>
 
@@ -398,13 +523,13 @@ export default function SettingsPage() {
                   disabled={toggling}
                   className={clsx(
                     'btn rounded-full px-4 py-2.5 text-sm',
-                    selectedProvider.active
+                    selectedProvider.enabled
                       ? 'border border-red-500/30 bg-red-500/10 text-red-200 hover:bg-red-500/[0.16]'
                       : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/[0.16]',
                   )}
                 >
                   {toggling ? <Loader size={15} className="animate-spin" /> : <Power size={15} />}
-                  {selectedProvider.active ? 'Desativar' : 'Ativar'}
+                  {selectedProvider.enabled ? 'Desativar' : 'Ativar'}
                 </button>
               </div>
             </div>
@@ -480,7 +605,9 @@ export default function SettingsPage() {
                 </div>
                 <h4 className="mt-5 text-xl font-black text-white">Nenhuma chave salva para {providerMeta.label}</h4>
                 <p className="mt-3 max-w-md text-sm leading-7 text-zinc-400">
-                  Adicione uma chave acima para este provider aparecer como configurado na home e nos cards v26.
+                  {selectedProvider.configured
+                    ? 'Este provider ja aparece como configurado pelo ambiente do backend. Se quiser, voce ainda pode salvar slots adicionais por usuario.'
+                    : 'Adicione uma chave acima para este provider aparecer como configurado na home e nos cards v26.'}
                 </p>
               </div>
             ) : (
@@ -517,7 +644,7 @@ export default function SettingsPage() {
         </section>
       )}
 
-      {setupMode && hasAnyVerifiedKey && (
+      {setupMode && (hasAnyVerifiedKey || hasAnyConfiguredProvider) && (
         <button onClick={() => navigate('/')} className="btn-primary w-full justify-center rounded-[24px] py-4 text-sm">
           <CheckCircle2 size={16} />
           Ir para a home v26

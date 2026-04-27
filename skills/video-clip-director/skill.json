@@ -1,0 +1,23 @@
+{
+  "id": "video-clip-director",
+  "name": "Video Clip Director",
+  "description": "Analisa vídeos, identifica melhores momentos, gera cortes short-form para TikTok/Reels/Shorts. Estilo OpusClip. Não substitui FFmpeg — decide a estratégia, o pipeline executa.",
+  "domain": "video",
+  "version": "1.0.0",
+  "defaultModelTier": "mini",
+  "qualityModelTier": "strong",
+  "cutTypes": ["short_form", "long_form", "auto"],
+  "platforms": ["tiktok", "reels", "shorts", "instagram", "youtube"],
+  "input": {
+    "videoId":     { "type": "string", "required": true },
+    "filePath":    { "type": "string", "required": true },
+    "cutType":     { "type": "string", "default": "short_form" },
+    "platform":    { "type": "string", "default": "instagram" },
+    "instruction": { "type": "string", "required": false }
+  },
+  "output": {
+    "jobId":   "string",
+    "status":  "queued | processing | done | error",
+    "outputs": "array of clip objects with downloadUrl"
+  }
+}

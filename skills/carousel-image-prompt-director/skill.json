@@ -1,0 +1,34 @@
+{
+  "id": "carousel-image-prompt-director",
+  "name": "Carousel Image Prompt Director",
+  "description": "Gera prompts de imagem realistas e editoriais para carrosséis, com direção visual por slide. Não gera imagens — entrega pacote de prompts para o usuário gerar externamente.",
+  "domain": "visual_content",
+  "version": "1.0.0",
+  "defaultModelTier": "mini",
+  "qualityModelTier": "strong",
+  "requiresApprovalBeforeRender": true,
+  "input": {
+    "topic":    { "type": "string", "required": true,  "description": "Tema do carrossel" },
+    "niche":    { "type": "string", "required": false, "description": "Nicho/contexto do público" },
+    "slides":   { "type": "number", "required": false, "default": 6 },
+    "style":    { "type": "string", "required": false, "default": "premium editorial dark" },
+    "platform": { "type": "string", "required": false, "default": "instagram" },
+    "goal":     { "type": "string", "required": false, "description": "Objetivo do carrossel (educar, vender, engajar...)" }
+  },
+  "output": {
+    "type": "carousel_prompt_pack",
+    "status": "CAROUSEL_PROMPTS_READY",
+    "fields": ["planId","slides","next_step"]
+  },
+  "qualityRules": {
+    "minScore": 75,
+    "scoreBelow65Action": "escalate_to_strong",
+    "score65to79Action":  "accept_with_note",
+    "score80plusAction":  "accept"
+  },
+  "prohibitedAsMainScene": [
+    "sound wave","onda sonora","eq curve","curva de eq","alert","alerta",
+    "target","alvo","checklist","generic graph","gráfico genérico","icon","ícone","symbol","símbolo"
+  ],
+  "requiredFields": ["image_prompt","negative_prompt","composition","visual_purpose","title","text"]
+}

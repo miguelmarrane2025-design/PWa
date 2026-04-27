@@ -40,7 +40,7 @@ Se a confiança for < 0.6, use domain "content" como fallback (mais comum).
 
 Tarefas por domínio:
 content: create_product | create_traffic | create_funnel | create_copy | analyze_niche | create_script | build_offer | validate_product | build_mechanism | repurpose_content | write_script | write_email | optimize_bio
-visual: create_carousel | create_thumb | create_creative | extract_svg | optimize_thumbnail | create_prompt
+visual: create_carousel | create_prompt_pack | create_thumb | create_creative | extract_svg | optimize_thumbnail | create_prompt
 audio: refine_ir | compare_ir | blend_ir | tone_match | analyze_audio
 pedal: create_preset | read_photo | configure_amp | suggest_settings
 research: auto_search | auto_learn | predict_trends | collect_feedback | run_experiment
@@ -170,8 +170,42 @@ class IntentEngine {
   _classificacaoFallback(texto, sessao) {
     const t = texto.toLowerCase();
 
-    if (t.includes('carrossel')) return { domain: 'visual', task: 'create_carousel', confianca: 0.8, resumo: 'Criar carrossel' };
+    if (t.includes('copy') || t.includes('headline') || t.includes('gancho') || t.includes('hook') || t.includes('anúncio') || t.includes('anuncio')) {
+      return { domain: 'content', task: 'create_copy', confianca: 0.88, resumo: 'Criar copy' };
+    }
+    if (t.includes('carrossel') || t.includes('carousel') || t.includes('slides') || t.includes('post em slides')) {
+      if (t.includes('prompt') || t.includes('imagem') || t.includes('foto') || t.includes('visual')) {
+        return { domain: 'visual', task: 'create_prompt_pack', confianca: 0.88, resumo: 'Criar pacote de prompts para carrossel' };
+      }
+      return { domain: 'visual', task: 'create_carousel', confianca: 0.8, resumo: 'Criar carrossel' };
+    }
     if (t.includes('thumb')) return { domain: 'visual', task: 'create_thumb', confianca: 0.8, resumo: 'Criar thumbnail' };
+    if (t.includes('melhores momentos') || t.includes('corte esse vídeo') || t.includes('cortar vídeo') || t.includes('cortar video') || t.includes('editar vídeo') || t.includes('editar video') || t.includes('reels') || t.includes('shorts') || t.includes('legenda')) {
+      return { domain: 'video', task: 'create_clips', confianca: 0.9, resumo: 'Criar cortes de vídeo' };
+    }
+    if ((t.includes('nicho') || t.includes('nichos')) && (t.includes('canal') || t.includes('youtube') || t.includes('tiktok') || t.includes('faceless') || t.includes('dark'))) {
+      return { domain: 'channel', task: 'find_niches', confianca: 0.9, resumo: 'Pesquisar nichos para canal' };
+    }
+    if ((t.includes('foto') || t.includes('print') || t.includes('screenshot')) && (t.includes('pedaleira') || t.includes('preset') || t.includes('timbre'))) {
+      return { domain: 'audio', task: 'create_preset_from_image', confianca: 0.9, resumo: 'Criar preset a partir de imagem' };
+    }
+    if (t.includes('canal dark') || (t.includes('histórias bíblicas') && (t.includes('tiktok') || t.includes('youtube')))) {
+      return { domain: 'channel', task: 'dark_niche_research', confianca: 0.88, resumo: 'Planejar canal dark' };
+    }
+    if (t.includes('analise esse perfil') || t.includes('analisa esse perfil') || t.includes('analise o perfil') || t.includes('analisa o perfil') || (t.includes('perfil') && t.includes('ideias de vídeos')) || (t.includes('perfil') && t.includes('ideias de videos'))) {
+      return { domain: 'growth', task: 'analyze_profile', confianca: 0.88, resumo: 'Analisar perfil para crescimento' };
+    }
+    if (
+      t.includes('preset')
+      || t.includes('pedaleira')
+      || t.includes('tank-g')
+      || t.includes('blackbox')
+      || t.includes('hx stomp')
+      || t.includes('zoom g1')
+      || t.includes('m-vave')
+    ) {
+      return { domain: 'audio', task: 'create_preset', confianca: 0.88, resumo: 'Criar preset de áudio/gear' };
+    }
     if (t.includes('refina') || t.includes('refine') || t.includes('ir')) return { domain: 'audio', task: 'refine_ir', confianca: 0.75, resumo: 'Refinar IR' };
     if (t.includes('infoproduto') || t.includes('produto')) return { domain: 'content', task: 'create_product', confianca: 0.8, resumo: 'Criar produto' };
     if (t.includes('tráfego') || t.includes('trafego') || t.includes('hook')) return { domain: 'content', task: 'create_traffic', confianca: 0.8, resumo: 'Criar tráfego' };

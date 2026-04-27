@@ -28,3 +28,29 @@ export async function requireAuth(req, res, next) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 }
+
+export async function optionalAuth(req, _res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.trim().startsWith("Bearer ")) {
+      return next();
+    }
+
+    const token = authHeader
+      .trim()
+      .split(/\s+/)[1]
+      ?.trim()
+      .replace(/^["']|["']$/g, "");
+
+    if (!token) return next();
+
+    const payload = jwt.verify(token, config.jwt.secret);
+    const { rows } = await query("SELECT id, email, name FROM users WHERE id = $1", [payload.userId]);
+    if (rows.length) req.user = rows[0];
+  } catch {
+    // Optional auth should not fail the request if the token is absent/invalid.
+  }
+
+  next();
+}

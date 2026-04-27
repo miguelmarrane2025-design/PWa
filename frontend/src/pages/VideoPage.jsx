@@ -66,7 +66,7 @@ const TONE_LABELS = {
 
 const fmtSize = b => b > 1e9 ? `${(b/1e9).toFixed(1)}GB` : b > 1e6 ? `${(b/1e6).toFixed(1)}MB` : `${Math.round(b/1e3)}KB`;
 const fmtTime = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
-const CHUNK_THRESHOLD = 100 * 1024 * 1024;
+const CHUNK_THRESHOLD = 20 * 1024 * 1024;
 
 // ── Score bar ─────────────────────────────────────────────────────────────
 function ScoreBar({ score, max = 13 }) {
@@ -402,9 +402,14 @@ export default function VideoPage() {
     if (file.size < CHUNK_THRESHOLD) {
       const fd = new FormData();
       fd.append('file', file);
-      return videoApi.upload(fd, evt => {
-        if (evt.total) onProgress(Math.round((evt.loaded / evt.total) * 100));
-      });
+      try {
+        return await videoApi.upload(fd, evt => {
+          if (evt.total) onProgress(Math.round((evt.loaded / evt.total) * 100));
+        });
+      } catch (err) {
+        if (!/413|too large|payload/i.test(err.message || '')) throw err;
+        toast('Arquivo grande demais para upload direto. Retomando com envio em partes...');
+      }
     }
 
     const init = await videoApi.initUpload({ fileName: file.name, fileSize: file.size, mimeType: file.type });

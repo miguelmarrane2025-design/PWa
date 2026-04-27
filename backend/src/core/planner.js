@@ -13,13 +13,33 @@ const PLANOS_FIXOS = {
   'visual/create_carousel': (intencao, sessao) => ({
     domain: 'visual',
     task: 'create_carousel',
-    descricao: '🎨 Criando carrossel: copy → direção visual → imagens → HTML → PNG',
+    descricao: 'Gerando pacote de prompts de imagem para o carrossel',
+    useSkill: true,
+    steps: [
+      { modulo: 'skills/skill-runner', acao: 'executar', params: { skillId: 'carousel_image_prompt_director', topic: intencao.resumo || sessao.ultimoTexto, nicho: intencao.nicho || sessao.nicho, slides: 6, style: intencao.style || 'premium editorial dark', platform: 'instagram' } }
+    ]
+  }),
+
+  'visual/create_carousel_html': (intencao, sessao) => ({
+    domain: 'visual',
+    task: 'create_carousel_html',
+    descricao: 'Criando carrossel HTML/SVG como fallback manual',
     steps: [
       { modulo: 'squads/infoproduto/copy-generator', acao: 'gerar_copy_carrossel', params: { estilo: intencao.style, nicho: intencao.nicho || sessao.nicho } },
       { modulo: 'workers/visual/art-director', acao: 'definir_estilo', params: { tipo: 'carousel', style: intencao.style } },
       { modulo: 'integrations/image-banks', acao: 'buscar_imagens', params: { query: null, quantidade: 3 } },
       { modulo: 'renderers/html-carousel', acao: 'gerar_html', params: {} },
       { modulo: 'renderers/render-worker', acao: 'exportar_png', params: { tipo: 'carousel' } }
+    ]
+  }),
+
+  'visual/create_prompt_pack': (intencao, sessao) => ({
+    domain: 'visual',
+    task: 'create_prompt_pack',
+    descricao: 'Gerando pacote de prompts de imagem',
+    useSkill: true,
+    steps: [
+      { modulo: 'skills/skill-runner', acao: 'executar', params: { skillId: 'carousel_image_prompt_director', topic: intencao.resumo || sessao.ultimoTexto, nicho: intencao.nicho || sessao.nicho, slides: 6, style: intencao.style || 'premium editorial dark', platform: 'instagram' } }
     ]
   }),
 

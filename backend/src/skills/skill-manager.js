@@ -5,7 +5,7 @@
 // buscar na web e executar tarefas complexas.
 
 import { log } from '../core/logger.js';
-import { openaiStrong } from '../integrations/openai-advanced.js';
+import { openaiFast, openaiStrong } from '../integrations/openai-advanced.js';
 import { webSearch } from '../mcps/web-search.js';
 import { webScraper } from '../mcps/web-scraper.js';
 import { memoryMCP } from '../mcps/memory-mcp.js';
@@ -350,7 +350,239 @@ const SKILLS_REGISTRY = {
     executor: 'risk-guard-skill'
   },
 
-  // ── v26: Conteúdo e social extras ───────────────────────────────────────
+  // ── v26/v27: Conteúdo, visual e squads ──────────────────────────────────
+
+  'carousel_image_prompt_director': {
+    nome: 'CarouselImagePromptDirector',
+    descricao: 'Diretor de arte: gera pacote de prompts de imagem realistas para carrosséis. Não gera imagens.',
+    dominios: ['visual', 'content'],
+    tasks: ['create_carousel', 'create_prompt_pack', 'create_creative', 'create_prompt'],
+    tools: ['memory'],
+    executor: 'carousel-image-prompt-director',
+    modelTier: 'mini',
+    qualityTier: 'strong',
+    requiresApprovalBeforeRender: true
+  },
+
+  'copy_squad': {
+    nome: 'CopySquad',
+    descricao: 'Squad de copy com criação, revisão e refinamento.',
+    dominios: ['content', 'copy'],
+    tasks: ['create_copy', 'create_hook', 'create_headline', 'create_ad'],
+    tools: ['memory'],
+    executor: 'copy-squad-skill',
+    modelTier: 'strong'
+  },
+
+  'infoproduct_squad': {
+    nome: 'InfoproductSquad',
+    descricao: 'Squad de infoprodutos com estratégia, outline e revisão.',
+    dominios: ['content', 'product'],
+    tasks: ['create_product', 'create_ebook', 'create_course'],
+    tools: ['memory'],
+    executor: 'infoproduct-squad-skill',
+    modelTier: 'strong'
+  },
+
+  'audio_gear_squad': {
+    nome: 'AudioGearSquad',
+    descricao: 'Pedaleiras, presets e compatibilidade de timbre.',
+    dominios: ['audio', 'gear', 'pedal'],
+    tasks: ['create_preset', 'read_pedal', 'analyze_gear', 'create_tone'],
+    tools: ['memory'],
+    executor: 'audio-gear-squad-skill',
+    modelTier: 'strong'
+  },
+
+  'gear_vision': {
+    nome: 'GearVision',
+    descricao: 'Reconhece gear em imagem e aciona o fluxo de preset compatível.',
+    dominios: ['audio', 'gear', 'pedal'],
+    tasks: ['recognize_gear_image', 'read_pedal_image', 'analyze_pedal_settings', 'create_preset_from_image', 'recreate_tone_from_screenshot'],
+    tools: ['memory'],
+    executor: 'gear-vision-skill',
+    modelTier: 'strong'
+  },
+
+  'thumbnail_squad': {
+    nome: 'ThumbnailSquad',
+    descricao: 'Thumbnails profissionais com estratégia, prompt e revisão.',
+    dominios: ['visual'],
+    tasks: ['create_thumb', 'optimize_thumbnail'],
+    tools: ['memory'],
+    executor: 'thumbnail-squad-skill',
+    modelTier: 'strong'
+  },
+
+  'video_clip_director': {
+    nome: 'VideoClipDirector',
+    descricao: 'Direciona estratégia de cortes e melhores momentos para o pipeline de vídeo.',
+    dominios: ['video'],
+    tasks: ['create_clips', 'edit_short', 'edit_long', 'create_reels'],
+    tools: ['memory', 'ffmpeg'],
+    executor: 'video-clip-director'
+  },
+
+  'video_cutting_squad': {
+    nome: 'VideoCuttingSquad',
+    descricao: 'Planeja cortes, melhores momentos e coordena o pipeline principal de video.',
+    dominios: ['video'],
+    tasks: ['create_clips', 'find_hot_moments', 'render_shorts', 'review_clip', 'finalize_clips'],
+    tools: ['memory', 'ffmpeg'],
+    executor: 'video-cutting-squad-skill',
+    modelTier: 'strong'
+  },
+
+  'carousel_assembler': {
+    nome: 'CarouselAssembler',
+    descricao: 'Finaliza o carrossel quando as imagens do prompt pack forem enviadas.',
+    dominios: ['visual', 'content'],
+    tasks: ['finalize_carousel'],
+    tools: ['memory'],
+    executor: 'carousel-assembler-skill'
+  },
+
+  'caption_style_agent': {
+    nome: 'CaptionStyleAgent',
+    descricao: 'Sugere/aplica estilos de legenda para cortes de vídeo.',
+    dominios: ['video'],
+    tasks: ['add_captions'],
+    tools: ['memory'],
+    executor: 'caption-style-agent'
+  },
+
+  'social_metadata_agent': {
+    nome: 'SocialMetadataAgent',
+    descricao: 'Gera título, descrição, hashtags e CTA por plataforma social.',
+    dominios: ['video', 'content'],
+    tasks: ['social_metadata', 'create_script'],
+    tools: ['memory'],
+    executor: 'social-metadata-agent'
+  },
+
+  'quality_review': {
+    nome: 'QualityReviewAgent',
+    descricao: 'Revisor geral com score 0-100 e notas de melhoria.',
+    dominios: ['content', 'visual', 'video', 'audio'],
+    tasks: ['review', 'quality_check'],
+    tools: ['memory'],
+    executor: 'quality-review-agent'
+  },
+
+  'profile_investigator': {
+    nome: 'ProfileInvestigator',
+    descricao: 'Investiga perfis e sinais de crescimento com foco prático.',
+    dominios: ['growth', 'research', 'hunter'],
+    tasks: ['analyze_profile'],
+    tools: ['memory', 'web_search'],
+    executor: 'profile-investigator-skill'
+  },
+
+  'content_pattern_analyst': {
+    nome: 'ContentPatternAnalyst',
+    descricao: 'Analisa padrões de conteúdo e retenção por nicho e plataforma.',
+    dominios: ['growth', 'research'],
+    tasks: ['analyze_content_patterns'],
+    tools: ['memory', 'web_search'],
+    executor: 'content-pattern-analyst-skill'
+  },
+
+  'hook_research': {
+    nome: 'HookResearch',
+    descricao: 'Pesquisa hooks fortes e ângulos de abertura por nicho e plataforma.',
+    dominios: ['growth', 'content', 'research'],
+    tasks: ['find_hooks'],
+    tools: ['memory', 'web_search'],
+    executor: 'hook-research-skill'
+  },
+
+  'competitor_gap': {
+    nome: 'CompetitorGap',
+    descricao: 'Mapeia gaps competitivos e oportunidades de conteúdo.',
+    dominios: ['growth', 'research'],
+    tasks: ['analyze_competitor'],
+    tools: ['memory', 'web_search'],
+    executor: 'competitor-gap-skill'
+  },
+
+  'growth_strategy': {
+    nome: 'GrowthStrategy',
+    descricao: 'Cria estratégia de crescimento de canal e plano de ação.',
+    dominios: ['growth', 'research'],
+    tasks: ['create_strategy'],
+    tools: ['memory', 'web_search'],
+    executor: 'growth-strategy-skill'
+  },
+
+  'channel_niche_research_squad': {
+    nome: 'ChannelNicheResearchSquad',
+    descricao: 'Pesquisa nichos especificos para canais, plataformas, formatos e monetizacao.',
+    dominios: ['channel', 'growth', 'niche', 'research'],
+    tasks: ['find_niches', 'research_niche', 'analyze_niche', 'dark_niche_research', 'platform_fit', 'monetization_paths', 'competitor_map', 'find_channel_niches', 'channel_opportunities'],
+    tools: ['memory', 'web_search'],
+    executor: 'channel-niche-research-squad-skill',
+    modelTier: 'strong'
+  },
+
+  'creative_review_squad': {
+    nome: 'CreativeReviewSquad',
+    descricao: 'Faz review de criativos e packs visuais antes de publicar.',
+    dominios: ['content', 'visual', 'review'],
+    tasks: ['review_creative', 'creative_review'],
+    tools: ['memory'],
+    executor: 'creative-review-squad-skill',
+    modelTier: 'strong'
+  },
+
+  'dark_channel_squad': {
+    nome: 'DarkChannelSquad',
+    descricao: 'Cria canais dark com posicionamento, formatos e plano de execucao.',
+    dominios: ['content', 'growth', 'channel'],
+    tasks: ['create_dark_channel', 'launch_dark_channel'],
+    tools: ['memory', 'web_search'],
+    executor: 'dark-channel-squad-skill',
+    modelTier: 'strong'
+  },
+
+  'marketing_strategy_squad': {
+    nome: 'MarketingStrategySquad',
+    descricao: 'Estrategia de marketing, campanhas e posicionamento.',
+    dominios: ['marketing', 'growth'],
+    tasks: ['create_marketing_strategy'],
+    tools: ['memory', 'web_search'],
+    executor: 'marketing-strategy-squad-skill',
+    modelTier: 'strong'
+  },
+
+  'traffic_scale_squad': {
+    nome: 'TrafficScaleSquad',
+    descricao: 'Planeja escala de trafego e criativos de performance.',
+    dominios: ['traffic', 'growth', 'marketing'],
+    tasks: ['scale_traffic'],
+    tools: ['memory', 'web_search'],
+    executor: 'traffic-scale-squad-skill',
+    modelTier: 'strong'
+  },
+
+  'niche_visionary_squad': {
+    nome: 'NicheVisionarySquad',
+    descricao: 'Explora oportunidades amplas de mercado, blue ocean e produto.',
+    dominios: ['niche', 'research'],
+    tasks: ['visionary_niche_research'],
+    tools: ['memory', 'web_search'],
+    executor: 'niche-visionary-squad-skill',
+    modelTier: 'strong'
+  },
+
+  'infoproduct_publishing_squad': {
+    nome: 'InfoproductPublishingSquad',
+    descricao: 'Cria e publica ebook, curso e ativos de infoproduto.',
+    dominios: ['content', 'product', 'monetization'],
+    tasks: ['create_ebook', 'create_infoproduct', 'publish_infoproduct'],
+    tools: ['memory', 'web_search'],
+    executor: 'infoproduct-publishing-squad-skill',
+    modelTier: 'strong'
+  },
 
   'bio_optimizer': {
     nome: 'BioOptimizer',
@@ -449,12 +681,14 @@ class SkillManager {
       // Bind openaiStrong to ctx.userId so skills use the user's own API key
       const userId = ctx?.userId || null;
       const openaiStrongUser = (messages, opts = {}) => openaiStrong(messages, { ...opts, userId });
+      const openaiFastUser = (messages, opts = {}) => openaiFast(messages, { ...opts, userId });
 
       const resultado = await executor(ctx, params, {
         webSearch:  webSearchFn,
         webScraper,
         memoryMCP,
         openaiStrong: openaiStrongUser,
+        openaiFast: openaiFastUser,
         log
       });
 
@@ -524,8 +758,20 @@ Responda APENAS com o ID da skill mais adequada.`;
       .map(([id, s]) => ({
         id,
         nome: s.nome,
+        name: s.nome,
         descricao: s.descricao,
-        dominios: s.dominios
+        description: s.descricao,
+        dominios: s.dominios,
+        domain: s.dominios?.[0] || null,
+        tasks: s.tasks,
+        tools: s.tools,
+        executor: s.executor,
+        modelTier: s.modelTier || null,
+        qualityTier: s.qualityTier || null,
+        requiresApprovalBeforeRender: !!s.requiresApprovalBeforeRender,
+        inputSchema: s.inputSchema || {},
+        outputSchema: s.outputSchema || {},
+        source: 'skill-manager',
       }));
   }
 

@@ -33,6 +33,7 @@ const PRIMARY_NAV = [
 const SECONDARY_NAV = [
   { to: '/skills', icon: Zap, label: 'Skills' },
   { to: '/memory', icon: Brain, label: 'Memory' },
+  { to: '/training', icon: Brain, label: 'Training' },
   { to: '/settings', icon: Settings, label: 'API Keys' },
   { to: '/integrations', icon: Cloud, label: 'Integrations' },
 ];
@@ -55,6 +56,7 @@ const PAGE_META = [
   { test: path => path.startsWith('/social'), title: 'Social Research', caption: 'Profile Investigator, Metrics Research e Trend Radar' },
   { test: path => path.startsWith('/skills'), title: 'Skills', caption: 'Biblioteca executavel de skills e workflows' },
   { test: path => path.startsWith('/memory'), title: 'Memory', caption: 'Memoria persistente compartilhada entre fluxos' },
+  { test: path => path.startsWith('/training'), title: 'Training', caption: 'Feedback, exemplos e budget dos agentes' },
   { test: path => path.startsWith('/settings'), title: 'API Keys', caption: 'Providers, chaves mascaradas e status ativo' },
   { test: path => path.startsWith('/integrations'), title: 'Integrations', caption: 'Google Drive e conectores externos' },
 ];

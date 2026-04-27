@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
   Cloud,
@@ -18,14 +18,15 @@ function IntegrationStatus({ item }) {
     <div className="rounded-[24px] border border-white/[0.08] bg-[#111116] p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-white">{item.name}</p>
-          <p className="mt-1 text-xs text-zinc-500">Estado real coletado do backend</p>
+          <p className="text-sm font-semibold text-white">{item.label || item.name}</p>
+          <p className="mt-1 text-xs text-zinc-500">{item.description || 'Estado real coletado do backend'}</p>
+          {item.maskedKey && <p className="mt-2 font-mono text-xs text-zinc-400">{item.maskedKey}</p>}
         </div>
         <span className={clsx(
           'rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em]',
-          item.connected
+          item.configured
             ? 'border-emerald-500/30 bg-emerald-500/[0.12] text-emerald-300'
-            : item.status === 'available'
+            : item.enabled
               ? 'border-amber-500/30 bg-amber-500/[0.12] text-amber-200'
               : 'border-white/10 bg-white/[0.06] text-zinc-300',
         )}>
@@ -37,7 +38,7 @@ function IntegrationStatus({ item }) {
 }
 
 export default function IntegrationsPage() {
-  const [integrations, setIntegrations] = useState({ items: [] });
+  const [integrations, setIntegrations] = useState({ integrations: [] });
   const [driveStatus, setDriveStatus] = useState(null);
   const [files, setFiles] = useState([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
@@ -45,7 +46,7 @@ export default function IntegrationsPage() {
   const load = async () => {
     try {
       const [integrationData, driveData] = await Promise.all([
-        catalogApi.getIntegrations(),
+        catalogApi.getSystemIntegrations().catch(() => catalogApi.getIntegrations()),
         driveApi.status().catch(() => ({ configured: false, connected: false })),
       ]);
       setIntegrations(integrationData);
@@ -58,6 +59,15 @@ export default function IntegrationsPage() {
   useEffect(() => {
     load();
   }, []);
+
+  const socialIntegrations = useMemo(
+    () => (integrations.integrations || integrations.items || []).filter(item => item.category === 'social_research'),
+    [integrations],
+  );
+  const storageIntegrations = useMemo(
+    () => (integrations.integrations || integrations.items || []).filter(item => item.category === 'storage_memory'),
+    [integrations],
+  );
 
   const connectDrive = async () => {
     try {
@@ -104,7 +114,7 @@ export default function IntegrationsPage() {
             Conectores reais preservados no patch v26.
           </h2>
           <p className="mt-4 max-w-3xl text-sm leading-7 text-zinc-300 sm:text-base">
-            Esta pagina continua ligada ao Google Drive existente e agora exibe o estado real dos providers de integracao ja visiveis na home.
+            Esta pagina continua ligada ao Google Drive existente e agora exibe o estado real das APIs externas e integracoes de memoria usadas pelo app.
           </p>
         </div>
       </section>
@@ -133,9 +143,9 @@ export default function IntegrationsPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-white">Google Drive</p>
-                <p className="mt-1 text-sm leading-6 text-zinc-400">
-                  OAuth, listagem de arquivos e desconexao continuam ativos no backend atual.
-                </p>
+              <p className="mt-1 text-sm leading-6 text-zinc-400">
+                OAuth, listagem de arquivos e desconexao continuam ativos no backend atual.
+              </p>
               </div>
             </div>
 
@@ -182,8 +192,8 @@ export default function IntegrationsPage() {
         <div className="space-y-5 rounded-[30px] border border-white/10 bg-[#111116] p-6">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Provider integrations</p>
-              <h3 className="mt-2 text-2xl font-black text-white">Chaves conectadas</h3>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Social Research APIs</p>
+              <h3 className="mt-2 text-2xl font-black text-white">YouTube, RapidAPI e Apify</h3>
             </div>
             <button onClick={load} className="btn-ghost rounded-full px-4 py-2.5 text-sm">
               <RefreshCw size={15} />
@@ -192,9 +202,18 @@ export default function IntegrationsPage() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            {(integrations.items || []).map(item => (
+            {socialIntegrations.map(item => (
               <IntegrationStatus key={item.id} item={item} />
             ))}
+          </div>
+
+          <div className="pt-2">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Storage & Memory</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {storageIntegrations.map(item => (
+                <IntegrationStatus key={item.id} item={item} />
+              ))}
+            </div>
           </div>
         </div>
       </section>

@@ -17,7 +17,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
 function statusTone(status) {
-  if (status === 'ready' || status === 'connected' || status === 'ok') {
+  if (status === 'ready' || status === 'connected' || status === 'ok' || status === 'healthy') {
     return 'bg-emerald-500/[0.12] text-emerald-300 border-emerald-500/30';
   }
   if (status === 'degraded' || status === 'fallback' || status === 'available') {
@@ -88,14 +88,14 @@ function ProviderStripCard({ provider, onOpen }) {
           <p className="text-sm font-bold text-white">{provider.label || provider.id}</p>
           <p className="mt-1 text-xs text-zinc-500">{provider.category === 'integration' ? 'Integration provider' : 'LLM provider'}</p>
         </div>
-        <span className={clsx('rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em]', statusTone(provider.hasVerified ? 'ready' : provider.active ? 'available' : 'setup'))}>
-          {provider.hasVerified ? 'configured' : provider.active ? 'enabled' : 'setup'}
+        <span className={clsx('rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em]', statusTone(provider.configured ? 'ready' : provider.enabled ? 'available' : 'setup'))}>
+          {provider.configured ? 'configured' : provider.enabled ? 'enabled' : 'setup'}
         </span>
       </div>
       <div className="mt-6 flex items-end justify-between gap-3">
         <div>
-          <p className="text-2xl font-black text-white">{provider.keyCount || 0}</p>
-          <p className="text-xs text-zinc-500">saved keys</p>
+          <p className="text-sm font-mono text-white">{provider.maskedKey || 'not configured'}</p>
+          <p className="text-xs text-zinc-500">masked key / status</p>
         </div>
         <ChevronRight size={18} className="text-zinc-500 transition duration-300 group-hover:text-brand-400" />
       </div>
@@ -153,9 +153,9 @@ function ConversationCard({ conversation, onOpen }) {
 export default function HomePage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [agents, setAgents] = useState([]);
-  const [skills, setSkills] = useState({ items: [], stats: {}, workflows: [] });
-  const [providers, setProviders] = useState({ items: [], keys: [] });
+  const [providers, setProviders] = useState({ providers: [] });
   const [integrations, setIntegrations] = useState({ items: [] });
   const [health, setHealth] = useState(null);
   const [conversations, setConversations] = useState([]);
@@ -166,31 +166,31 @@ export default function HomePage() {
     (async () => {
       setLoading(true);
       try {
-        const [
-          agentData,
-          skillData,
-          providerData,
-          integrationData,
-          healthData,
-          conversationData,
-        ] = await Promise.all([
-          catalogApi.getAgents(),
-          catalogApi.getSkills(),
-          catalogApi.getProviders(),
-          catalogApi.getIntegrations(),
-          catalogApi.getHealth(),
-          chatApi.getConversations().catch(() => []),
+        const [healthResult, agentResult, providerResult, integrationResult, conversationResult] = await Promise.allSettled([
+          catalogApi.getSystemHealth(),
+          catalogApi.getSystemAgents(),
+          catalogApi.getSystemProviders(),
+          catalogApi.getSystemIntegrations().catch(() => catalogApi.getIntegrations()),
+          chatApi.getConversations(),
         ]);
 
         if (cancelled) return;
-        setAgents(agentData.items || []);
-        setSkills(skillData);
-        setProviders(providerData);
-        setIntegrations(integrationData);
-        setHealth(healthData);
-        setConversations(Array.isArray(conversationData) ? conversationData.slice(0, 8) : []);
+        if (healthResult.status === 'fulfilled') {
+          setHealth(healthResult.value);
+          setLoadError('');
+        } else {
+          setHealth(null);
+          setLoadError('endpoint indisponível');
+        }
+        setAgents(agentResult.status === 'fulfilled' ? (agentResult.value.agents || []) : []);
+        setProviders(providerResult.status === 'fulfilled' ? providerResult.value : { providers: [] });
+        setIntegrations(integrationResult.status === 'fulfilled' ? integrationResult.value : { integrations: [], items: [] });
+        setConversations(conversationResult.status === 'fulfilled' && Array.isArray(conversationResult.value)
+          ? conversationResult.value.slice(0, 8)
+          : []);
       } catch (error) {
         if (!cancelled) {
+          setLoadError('endpoint indisponível');
           toast.error(error.message || 'Nao foi possivel carregar a home');
         }
       } finally {
@@ -211,8 +211,25 @@ export default function HomePage() {
     () => agents.filter(agent => !featuredAgents.some(featured => featured.id === agent.id)),
     [agents, featuredAgents],
   );
-  const healthyProviders = providers.items?.filter(provider => provider.hasVerified) || [];
-  const readyIntegrations = integrations.items?.filter(item => item.connected) || [];
+  const integrationList = integrations.integrations || integrations.items || [];
+  const readyIntegrations = integrationList.filter(item => item.connected || item.configured);
+  const healthStatus = health?.status || health?.backend || 'endpoint indisponível';
+  const skillCount = Number.isFinite(Number(health?.skillsCount)) ? Number(health.skillsCount) : null;
+  const providerCount = Number.isFinite(Number(health?.providersCount)) ? Number(health.providersCount) : null;
+  const agentCount = Number.isFinite(Number(health?.agentsCount)) ? Number(health.agentsCount) : null;
+  const reviewerCount = Number.isFinite(Number(health?.reviewersCount)) ? Number(health.reviewersCount) : null;
+  const databaseStatus = typeof health?.database === 'string'
+    ? health.database
+    : health?.database?.connected
+      ? 'ok'
+      : 'degraded';
+  const audioStatus = typeof health?.audio === 'string'
+    ? health.audio
+    : health?.audio?.status || 'degraded';
+  const videoStatus = typeof health?.video === 'string'
+    ? health.video
+    : health?.video?.status || 'degraded';
+  const displayCount = value => (value == null ? '—' : value);
 
   if (loading) {
     return (
@@ -226,7 +243,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="space-y-8 pb-[140px]">
       <section className="relative overflow-hidden rounded-[36px] border border-white/10 bg-[#0c0c11] px-6 py-7 sm:px-8 sm:py-8">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(229,9,20,0.24),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(255,255,255,0.08),_transparent_30%)]" />
         <div className="relative z-10 grid gap-8 xl:grid-cols-[minmax(0,1.4fr)_360px]">
@@ -238,9 +255,8 @@ export default function HomePage() {
             <h2 className="mt-4 max-w-3xl text-4xl font-black tracking-[-0.04em] text-white sm:text-5xl">
               Catalogo premium de agentes conectado ao sistema real.
             </h2>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-300 sm:text-base">
-              A casca visual foi reorganizada para home estilo catalogo, mantendo chat, video, audio,
-              settings, skills e memory na mesma base funcional.
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-300 sm:text-base">
+              Home conectada aos endpoints reais de system, providers, integrations e conversas.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <button onClick={() => navigate('/chat')} className="btn-primary rounded-full px-5 py-3 text-sm">
@@ -262,34 +278,47 @@ export default function HomePage() {
                   <Bot size={20} />
                 </div>
                 <div>
-                  <p className="text-lg font-black text-white">{health?.status || 'unknown'}</p>
+                  <p className="text-lg font-black text-white">{health ? healthStatus : 'endpoint indisponível'}</p>
                   <p className="text-xs text-zinc-500">{health?.service || 'botsquad-backend'}</p>
                 </div>
               </div>
               <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-2xl border border-white/[0.08] bg-white/[0.05] p-3">
-                  <p className="text-2xl font-black text-white">{skills.items?.length || 0}</p>
+                  <p className="text-2xl font-black text-white">{displayCount(agentCount)}</p>
+                  <p className="mt-1 text-xs text-zinc-500">agentes ativos</p>
+                </div>
+                <div className="rounded-2xl border border-white/[0.08] bg-white/[0.05] p-3">
+                  <p className="text-2xl font-black text-white">{displayCount(skillCount)}</p>
                   <p className="mt-1 text-xs text-zinc-500">skills vivas</p>
                 </div>
                 <div className="rounded-2xl border border-white/[0.08] bg-white/[0.05] p-3">
-                  <p className="text-2xl font-black text-white">{healthyProviders.length}</p>
+                  <p className="text-2xl font-black text-white">{displayCount(providerCount)}</p>
                   <p className="mt-1 text-xs text-zinc-500">providers ativos</p>
                 </div>
+                <div className="rounded-2xl border border-white/[0.08] bg-white/[0.05] p-3">
+                  <p className="text-2xl font-black text-white">{displayCount(reviewerCount)}</p>
+                  <p className="mt-1 text-xs text-zinc-500">reviewers</p>
+                </div>
               </div>
+              {!health && loadError && (
+                <div className="mt-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  {loadError}
+                </div>
+              )}
             </div>
 
             <div className="rounded-[28px] border border-white/10 bg-black/30 p-5 backdrop-blur-sm">
               <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Realtime stack</p>
-              <div className="mt-4 space-y-3">
+              <div className="mt-4 space-y-3 pb-[140px] sm:pb-0">
                 {[
-                  { label: 'Database', status: health?.database?.connected ? 'ok' : 'degraded' },
-                  { label: 'Audio stack', status: health?.audio?.status || 'degraded' },
-                  { label: 'Video stack', status: health?.video?.status || 'degraded' },
+                  { label: 'Database', status: databaseStatus },
+                  { label: 'Audio stack', status: audioStatus },
+                  { label: 'Video stack', status: videoStatus },
                 ].map(item => (
                   <div key={item.label} className="flex items-center justify-between rounded-2xl border border-white/[0.08] bg-white/[0.05] px-3 py-3">
                     <span className="text-sm text-zinc-200">{item.label}</span>
                     <span className={clsx('rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em]', statusTone(item.status))}>
-                      {item.status}
+                      {item.status === 'ok' ? 'OK' : item.status}
                     </span>
                   </div>
                 ))}
@@ -320,7 +349,7 @@ export default function HomePage() {
       <section className="space-y-4">
         {sectionTitle(<ShieldCheck size={14} />, 'Provider Stack', 'Providers reais, status real e chaves mascaradas')}
         <div className="flex snap-x gap-4 overflow-x-auto pb-2">
-          {(providers.items || []).map(provider => (
+          {(providers.providers || []).map(provider => (
             <ProviderStripCard key={provider.id} provider={provider} onOpen={navigate} />
           ))}
         </div>
@@ -329,7 +358,7 @@ export default function HomePage() {
       <section className="space-y-4">
         {sectionTitle(<CheckCircle2 size={14} />, 'Integrations', 'Conectores e servicos externos ativos')}
         <div className="flex snap-x gap-4 overflow-x-auto pb-2">
-          {(integrations.items || []).map(item => (
+          {integrationList.map(item => (
             <IntegrationCard key={item.id} item={item} onOpen={navigate} />
           ))}
         </div>
@@ -364,12 +393,14 @@ export default function HomePage() {
           <h3 className="mt-3 text-2xl font-black tracking-tight text-white">Mapa do stack ativo</h3>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {[
-              { label: 'Skills', value: skills.items?.length || 0, help: 'skills registradas' },
-              { label: 'Workflows', value: skills.workflows?.length || 0, help: 'fluxos encadeados' },
-              { label: 'Providers', value: providers.items?.length || 0, help: 'catalogados' },
-              { label: 'Verified', value: healthyProviders.length, help: 'providers verificados' },
-              { label: 'Integrations', value: readyIntegrations.length, help: 'conectadas' },
-              { label: 'Conversations', value: conversations.length, help: 'recentes na home' },
+              { label: 'Agents', value: displayCount(agentCount), help: 'agentes registrados' },
+              { label: 'Skills', value: displayCount(skillCount), help: 'skills registradas' },
+              { label: 'Workflows', value: '—', help: 'use Skills page for workflows' },
+              { label: 'Providers', value: displayCount(providerCount), help: 'catalogados' },
+              { label: 'Reviewers', value: displayCount(reviewerCount), help: 'reviewers ativos' },
+              { label: 'Verified', value: displayCount(providerCount), help: 'providers ativos/configurados' },
+              { label: 'Integrations', value: displayCount(readyIntegrations.length), help: 'conectadas' },
+              { label: 'Conversations', value: displayCount(conversations.length), help: 'recentes na home' },
             ].map(item => (
               <div key={item.label} className="rounded-3xl border border-white/[0.08] bg-black/20 p-4">
                 <p className="text-3xl font-black text-white">{item.value}</p>

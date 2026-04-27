@@ -14,6 +14,10 @@ const router = Router();
 const RESET_PASSWORD_MESSAGE = "Se este e-mail estiver cadastrado, enviaremos instruções para redefinir sua senha.";
 const RESET_TOKEN_TTL_MINUTES = 60;
 
+function isPublicRegistrationDisabled() {
+  return process.env.DISABLE_PUBLIC_REGISTRATION === 'true';
+}
+
 // ── FIX #6: Rate limit específico para login (brute-force protection) ────
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -85,6 +89,9 @@ function buildResetUrl(token) {
 }
 
 router.post("/register", async (req, res) => {
+  if (isPublicRegistrationDisabled()) {
+    return res.status(403).json({ ok: false, error: "Public registration disabled" });
+  }
   const { error, value } = registerSchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.details[0].message });
 

@@ -44,7 +44,10 @@ export const authApi = {
 
 // ── Agents ────────────────────────────────────────────────────────────────
 export const agentsApi = {
-  list: () => api.get('/agents'),
+  list: async () => {
+    const data = await api.get('/system/agents');
+    return data.agents || data.items || [];
+  },
 };
 
 // ── Chat ──────────────────────────────────────────────────────────────────
@@ -127,25 +130,23 @@ export const videoApi = {
   }),
 
   initUpload: data => api.post('/video/upload/init', data),
+  uploadInit: data => api.post('/video/upload/init', data),
   uploadChunk: (formData, onUploadProgress) => api.post('/video/upload/chunk', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 10 * 60 * 1000,
     onUploadProgress,
   }),
   completeUpload: data => api.post('/video/upload/complete', data),
+  uploadComplete: data => api.post('/video/upload/complete', data),
   importUrl: data => api.post('/video/import-url', data, { timeout: 10 * 60 * 1000 }),
   importServerFile: data => api.post('/video/import-server-file', data),
-  createJob: data => api.post('/video/jobs', data),
-
-  // Edit: sends video + message, returns { jobId } immediately (async processing)
-  edit: (formData) => api.post('/video/edit', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60 * 1000, // 60s just for upload; processing happens async
-  }),
+  createJob: data => api.post('/video/pipeline/jobs', data),
+  createPipelineJob: data => api.post('/video/pipeline/jobs', data),
 
   // Poll job status
-  getJob:  (jobId) => api.get(`/video/jobs/${jobId}`),
-  getJobs: ()      => api.get('/video/jobs'),
+  getJob:  (jobId) => api.get(`/video/pipeline/jobs/${jobId}`),
+  getPipelineJob:  (jobId) => api.get(`/video/pipeline/jobs/${jobId}`),
+  getJobs: ()      => api.get('/video/pipeline/jobs'),
 
   chat: (message, context = []) => api.post('/video/chat', { message, context }),
 
@@ -175,7 +176,11 @@ export const memoryApi = {
 
 // ── Skills ────────────────────────────────────────────────────────────────
 export const skillsApi = {
-  list:      domain    => api.get('/skills', { params: domain ? { domain } : {} }),
+  list:      async domain => {
+    const data = await api.get('/system/skills', { params: domain ? { domain } : {} });
+    return data.skills || data.items || data;
+  },
+  catalog:   domain    => api.get('/system/skills', { params: domain ? { domain } : {} }),
   stats:     ()        => api.get('/skills/stats'),
   workflows: ()        => api.get('/skills/workflows'),
   runSkill:  (id, params, files = []) => {
@@ -190,10 +195,22 @@ export const skillsApi = {
   runWorkflow: (id, params) => api.post(`/skills/workflows/${id}/run`, params),
 };
 
+// ── Training ──────────────────────────────────────────────────────────────
+export const trainingApi = {
+  sendFeedback: data => api.post('/training/feedback', data),
+  approvePrompt: data => api.post('/training/approve-prompt', data),
+  rejectPrompt: data => api.post('/training/reject-prompt', data),
+  getMemory: agentId => api.get(`/training/memory/${agentId}`),
+  getMemoryItems: (agentId, type) => api.get(`/training/memory/${agentId}/${type}`),
+  getTokenBudget: () => api.get('/training/token-budget'),
+};
+
 // ── Settings / API Keys ───────────────────────────────────────────────────
 export const settingsApi = {
   getApiKeys:       ()                          => api.get('/settings/apikeys'),
   getStatus:        ()                          => api.get('/settings/apikeys/status'),
+  getSystemProviders: ()                        => api.get('/system/providers'),
+  getSystemIntegrations: ()                     => api.get('/system/integrations'),
   getProviders:     ()                          => api.get('/settings/providers'),
   getModels:        (provider, key)             => api.get(`/settings/models?provider=${provider}${key ? `&key=${encodeURIComponent(key)}` : ''}`),
   saveApiKey:       (provider, key, model, slot = 0) => api.post('/settings/apikeys', { provider, api_key: key, model, slot }),
@@ -224,16 +241,21 @@ export const socialApi = {
 
 // ── v26 Dashboard / Catalog ──────────────────────────────────────────────
 export const catalogApi = {
-  getAgents:       ()       => api.get('/api/agents'),
-  getSkills:       (domain) => api.get('/api/skills', { params: domain ? { domain } : {} }),
-  getProviders:    ()       => api.get('/api/providers'),
-  getIntegrations: ()       => api.get('/api/integrations'),
-  getHealth:       ()       => api.get('/api/health'),
+  getAgents:       ()       => api.get('/agents'),
+  getSkills:       (domain) => api.get('/skills', { params: domain ? { domain } : {} }),
+  getProviders:    ()       => api.get('/providers'),
+  getIntegrations: ()       => api.get('/integrations'),
+  getHealth:       ()       => api.get('/health'),
+  getSystemProviders: ()    => api.get('/system/providers'),
+  getSystemIntegrations: () => api.get('/system/integrations'),
+  getSystemHealth: ()       => api.get('/system/health'),
+  getSystemAgents: ()       => api.get('/system/agents'),
+  getSystemSkills: (domain) => api.get('/system/skills', { params: domain ? { domain } : {} }),
 };
 
 // ── Research / Investigator ──────────────────────────────────────────────
 export const researchApi = {
-  analyze:        payload => api.post('/api/research/analyze', payload),
+  analyze:        payload => api.post('/research/analyze', payload),
   analyzeProfile: data    => api.post('/research/analyze', data),
   compare:        data    => api.post('/research/compare', data),
   trends:         data    => api.post('/research/trends', data),

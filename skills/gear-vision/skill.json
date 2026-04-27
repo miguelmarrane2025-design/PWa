@@ -1,0 +1,30 @@
+{
+  "id": "gear_vision",
+  "name": "Gear Vision Agent",
+  "version": "1.0.0",
+  "domain": "audio",
+  "description": "Reconhece imagens, prints e páginas de configuração de pedaleiras, pedais, amp modelers, IR loaders, plugins e equipamentos de áudio para ajudar na criação de presets compatíveis.",
+  "executor": "gearVisionAgent",
+  "minScore": 80,
+  "inputSchema": {
+    "imagePath": "string",
+    "imageBase64": "string",
+    "context": "string",
+    "targetStyle": "string",
+    "knownDevice": "string"
+  },
+  "outputSchema": {
+    "recognized": "boolean",
+    "confidence": "number",
+    "device": "object",
+    "visibleSettings": "object",
+    "unreadableFields": "array",
+    "inferred": "array",
+    "warnings": "array",
+    "presetRecommendations": "array",
+    "questionsForUser": "array"
+  },
+  "tags": ["audio", "gear", "vision", "preset", "pedaleira", "IR", "worship"],
+  "reviewAgent": "toneQualityReviewAgent",
+  "memoryKey": "audio-gear"
+}

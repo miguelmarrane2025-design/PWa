@@ -2,6 +2,10 @@ node_modules/
 .env
 .env.*
 !.env.example
+frontend/.env
+frontend/.env.*
+backend/.env
+backend/.env.*
 
 dist/
 build/
@@ -14,11 +18,17 @@ storage/temp/
 storage/outputs/
 storage/jobs/
 storage/chunks/
+storage/library/
+storage/memory/agents/
+storage/drive-memory/
+storage/training/
 storage/**/*.mp4
 storage/**/*.mov
 storage/**/*.mkv
 storage/**/*.webm
 storage/**/*.wav
+storage/**/*.aiff
+storage/**/*.flac
 storage/**/*.zip
 
 *.log
@@ -33,5 +43,12 @@ yarn-error.log*
 *.zip
 *.tar
 *.tar.gz
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.wav
+*.aiff
+*.flac
 .codex
 .codex/

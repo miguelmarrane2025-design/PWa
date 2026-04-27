@@ -32,10 +32,20 @@ const FORCED_AGENTS = {
   social: async (args) => { const { researchAgent } = await import('./researchAgent.js'); const r = await researchAgent({ ...args, tools: args.tools || {}, _systemOverride: 'social' }); return { content: r.content, agent: 'social', metadata: { agent: 'social', ...r.metadata } }; },
   automation: async (args) => { const { contentAgent } = await import('./contentAgent.js'); const r = await contentAgent({ ...args, _systemOverride: 'automation' }); return { content: r.content, agent: 'automation', metadata: { agent: 'automation' } }; },
   memory: async (args) => { const msgs = [{ role: 'system', content: 'Você é o Memory Agent do BotSquad. Gerencie memórias, contextos e histórico. Responda na língua do usuário.' }, ...(args.context || []), { role: 'user', content: args.message }]; const content = await chat(msgs, { userId: args.userId }); return { content, agent: 'memory', metadata: { agent: 'memory' } }; },
+  'video-cutting': async (args) => { const { runVideoCuttingFlow } = await import('./video/videoCuttingSquad.js'); const r = await runVideoCuttingFlow(args); return { content: r.content, agent: 'video_cutting_squad', metadata: r.metadata || { agent: 'video_cutting_squad' } }; },
+  'gear-vision': async (args) => { const { createPresetFromImage } = await import('./audio/gearVisionAgent.js'); const imagePath = (args.files || []).find(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file.originalname ?? ''))?.path || null; const r = await createPresetFromImage({ imagePath, targetStyle: args.message || '', context: args.message || '', userId: args.userId }); return { content: r.content, agent: 'gear_vision', metadata: r.metadata || { agent: 'gear_vision' } }; },
+  'channel-niche': async (args) => { const { runChannelNicheResearchFlow } = await import('./channel-niche/channelNicheResearchSquad.js'); const r = await runChannelNicheResearchFlow({ ...args, briefing: {} }); return { content: r.content, agent: 'channel_niche_research_squad', metadata: r.metadata || { agent: 'channel_niche_research_squad' } }; },
+  'dark': async (args) => { const { runDarkChannelFlow } = await import('./dark-channel/darkChannelSquad.js'); const r = await runDarkChannelFlow(args); return { content: r.content, agent: 'dark_channel_squad', metadata: r.metadata || { agent: 'dark_channel_squad' } }; },
+  'marketing': async (args) => { const { runMarketingStrategyFlow } = await import('./marketing/marketingStrategySquad.js'); const r = await runMarketingStrategyFlow(args); return { content: r.content, agent: 'marketing_strategy_squad', metadata: r.metadata || { agent: 'marketing_strategy_squad' } }; },
+  'traffic': async (args) => { const { runTrafficScaleFlow } = await import('./traffic/trafficScaleSquad.js'); const r = await runTrafficScaleFlow(args); return { content: r.content, agent: 'traffic_scale_squad', metadata: r.metadata || { agent: 'traffic_scale_squad' } }; },
+  'niche': async (args) => { const { runNicheVisionaryFlow } = await import('./niche/nicheVisionarySquad.js'); const r = await runNicheVisionaryFlow(args); return { content: r.content, agent: 'niche_visionary_squad', metadata: r.metadata || { agent: 'niche_visionary_squad' } }; },
+  'infoproduct': async (args) => { const { runInfoProductFlow } = await import('./infoproduct/infoProductPublishingSquad.js'); const r = await runInfoProductFlow(args); return { content: r.content, agent: 'infoproduct_publishing_squad', metadata: r.metadata || { agent: 'infoproduct_publishing_squad' } }; },
+  'creative-review': async (args) => { const { runCreativeReviewFlow } = await import('./creative-review/creativeReviewSquad.js'); const r = await runCreativeReviewFlow(args); return { content: r.content, agent: 'creative_review_squad', metadata: r.metadata || { agent: 'creative_review_squad' } }; },
+  agency: async (args) => { const { runAgencyCommandFlow } = await import('./agency/agencyCommandSquad.js'); const r = await runAgencyCommandFlow(args); return { content: r.content, agent: 'agency_command_squad', metadata: r.metadata || { agent: 'agency_command_squad' } }; },
 };
 
 // Phantom module → real skill
-const MODULE_TO_SKILL = {
+export const MODULE_TO_SKILL = {
   'workers/audio/audio-parser':        'audio_engineer',
   'workers/audio/context-loader':      'audio_engineer',
   'workers/audio/decision-engine':     'audio_engineer',
@@ -79,32 +89,52 @@ const MODULE_TO_SKILL = {
   'squads/aprendizado/learning-engine':       'learning_optimizer',
   'workers/system/status':             'data_logger',
   'workers/system/fallback':           null,
-  'workers/video/editor':              'video_editor',
-  'workers/video/captions':            'video_editor',
-  'workers/video/silence-remover':     'video_editor',
+  'workers/video/editor':              'video_clip_director',
+  'workers/video/captions':            'caption_style_agent',
+  'workers/video/silence-remover':     'video_clip_director',
 };
 
-const DOMAIN_TASK_TO_SKILL = {
+export const DOMAIN_TASK_TO_SKILL = {
   'audio/refine_ir':        'audio_engineer',
   'audio/compare_ir':       'audio_engineer',
-  'audio/blend_ir':         'audio_engineer',
+  'audio/blend_ir':         'audio_gear_squad',
+  'audio/create_ir':        'audio_gear_squad',
+  'audio/create_preset':    'audio_gear_squad',
+  'audio/read_pedal':       'audio_gear_squad',
+  'audio/analyze_gear':     'audio_gear_squad',
+  'audio/create_tone':      'audio_gear_squad',
   'audio/tone_match':       'audio_engineer',
   'audio/analyze_audio':    'audio_engineer',
+  'audio/recognize_gear_image': 'gear_vision',
+  'audio/read_pedal_image': 'gear_vision',
+  'audio/analyze_pedal_settings': 'gear_vision',
+  'audio/create_preset_from_image': 'gear_vision',
+  'audio/recreate_tone_from_screenshot': 'gear_vision',
   'pedal/create_preset':    'audio_engineer',
   'pedal/read_photo':       'audio_engineer',
   'pedal/configure_amp':    'audio_engineer',
   'pedal/suggest_settings': 'audio_engineer',
-  'content/create_product': 'infoproduct_builder',
+  'content/create_product': 'infoproduct_squad',
+  'content/create_ebook':   'infoproduct_squad',
+  'content/create_course':  'infoproduct_squad',
+  'content/create_pdf':     'infoproduct_squad',
   'content/create_traffic': 'hook_hunter',
   'content/create_funnel':  'funnel_architect',
-  'content/create_copy':    'copy_expert',
+  'content/create_copy':    'copy_squad',
+  'content/create_hook':    'copy_squad',
+  'content/create_headline':'copy_squad',
+  'content/create_ad':      'copy_squad',
   'content/analyze_niche':  'niche_researcher',
   'content/create_script':  'copy_expert',
-  'visual/create_carousel': 'carousel_generator',
-  'visual/create_thumb':    'thumbnail_optimizer',
+  'visual/create_carousel': 'carousel_image_prompt_director',
+  'visual/create_prompt_pack': 'carousel_image_prompt_director',
+  'visual/finalize_carousel': 'carousel_assembler',
+  'visual/create_thumb':    'thumbnail_squad',
+  'visual/create_thumbnail':'thumbnail_squad',
   'visual/create_creative': 'visual_expert',
   'visual/extract_svg':     'visual_expert',
   'visual/create_prompt':   'prompt_image_generator',
+  'visual/create_single_image_prompt': 'prompt_image_generator',
   'research/auto_search':   'market_intel',
   'research/auto_learn':    'learning_optimizer',
   'research/predict_trends':'trend_predictor',
@@ -113,11 +143,17 @@ const DOMAIN_TASK_TO_SKILL = {
   'hunter/build_persona':   'persona_builder',
   'system/show_status':     'data_logger',
   'system/assess_risk':     'risk_guard',
-  'video/edit_short':       'video_editor',
-  'video/edit_long':        'video_editor',
-  'video/add_captions':     'video_editor',
-  'video/remove_silence':   'video_editor',
-  'video/create_reels':     'video_editor',
+  'video/create_clips':     'video_cutting_squad',
+  'video/find_hot_moments': 'video_cutting_squad',
+  'video/render_shorts':    'video_cutting_squad',
+  'video/review_clip':      'video_cutting_squad',
+  'video/finalize_clips':   'video_cutting_squad',
+  'video/edit_short':       'video_cutting_squad',
+  'video/edit_long':        'video_cutting_squad',
+  'video/add_captions':     'caption_style_agent',
+  'video/remove_silence':   'video_cutting_squad',
+  'video/create_reels':     'video_cutting_squad',
+  'video/social_metadata':  'social_metadata_agent',
   'product/create_product':  'infoproduct_builder',
   'product/validate_product':'product_validator',
   'product/build_offer':     'offer_builder',
@@ -131,12 +167,25 @@ const DOMAIN_TASK_TO_SKILL = {
   'social/build_audience':    'audience_builder',
   'social/plan_content':      'content_scheduler',
   'growth/analyze_performance':'performance_analyst',
+  'growth/analyze_profile': 'profile_investigator',
+  'growth/find_hooks':      'hook_research',
+  'growth/analyze_competitor': 'competitor_gap',
+  'growth/create_strategy': 'growth_strategy',
+  'growth/find_channel_niches': 'channel_niche_research_squad',
   'growth/optimize_retention': 'retention_optimizer',
   'growth/optimize_seo':       'seo_optimizer',
   'growth/remodel_channel':    'channel_remodeler',
   'content/write_script':      'script_writer',
   'content/write_email':       'email_sequence',
   'content/optimize_bio':      'bio_optimizer',
+  'channel/find_niches': 'channel_niche_research_squad',
+  'channel/research_niche': 'channel_niche_research_squad',
+  'channel/analyze_niche': 'channel_niche_research_squad',
+  'channel/dark_niche_research': 'channel_niche_research_squad',
+  'channel/platform_fit': 'channel_niche_research_squad',
+  'channel/monetization_paths': 'channel_niche_research_squad',
+  'channel/competitor_map': 'channel_niche_research_squad',
+  'niche/channel_opportunities': 'channel_niche_research_squad',
 };
 
 // ── Main entry point ──────────────────────────────────────────────────────
@@ -171,18 +220,61 @@ export async function orchestrate({ userId, message, context = [], files = [] })
   // Auto-route: se a mensagem contém @perfil ou URL de rede social, vai direto ao researchAgent
   // Matches @handle (preceded by space/start, not part of an email) or social media URLs
   // Auto-route to videoAgent when video files are present or video keywords detected
-  const VIDEO_KEYWORDS = /\b(edit(ar|a|e)?\s+(v[íi]deo|video)|cortar?\s+v[íi]deo|legenda[rs]?|remov[ea]r?\s+(sil[eê]ncio|pausa)|reels?|tiktok|shorts?\s+form|videomaker|video\s+maker)\b/i;
+  const VIDEO_KEYWORDS = /\b(edit(ar|a|e)?\s+(v[íi]deo|video)|cortar?\s+v[íi]deo|legenda[rs]?|remov[ea]r?\s+(sil[eê]ncio|pausa)|melhores?\s+momentos?|reels?|tiktok|shorts?\s+form|videomaker|video\s+maker)\b/i;
   const hasVideoFiles = (files ?? []).some(f => /\.(mp4|mov|avi|mkv|webm|m4v|3gp)$/i.test(f.originalname ?? ''));
   if (!forcedAgent && (hasVideoFiles || VIDEO_KEYWORDS.test(cleanMessage))) {
     try {
-      const { default: videoAgent } = await import('./videoAgent.js');
-      const r = await videoAgent({ userId, message: cleanMessage, context, files });
+      const { runVideoCuttingFlow } = await import('./video/videoCuttingSquad.js');
+      const r = await runVideoCuttingFlow({ userId, message: cleanMessage, context, files });
       if (r?.content) {
-        logger.info('[Orchestrator] Auto-routed to videoAgent');
-        return { content: r.content, agent: 'video', metadata: { agent: 'video' } };
+        logger.info('[Orchestrator] Auto-routed to video_cutting_squad');
+        return { content: r.content, agent: 'video_cutting_squad', metadata: r.metadata || { agent: 'video_cutting_squad' } };
       }
     } catch (err) {
       logger.warn(`[Orchestrator] Auto-video failed: ${err.message}`);
+    }
+  }
+
+  const hasImageFiles = (files ?? []).some(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file.originalname ?? ''));
+  if (!forcedAgent && hasImageFiles && /(pedaleira|pedal|preset|timbre|worship|gear|screenshot|print)/i.test(cleanMessage)) {
+    try {
+      const result = await FORCED_AGENTS['gear-vision'](args);
+      if (result?.content) {
+        logger.info('[Orchestrator] Auto-routed to gear_vision');
+        return result;
+      }
+    } catch (err) {
+      logger.warn(`[Orchestrator] Auto-gear-vision failed: ${err.message}`);
+    }
+  }
+
+  if (!forcedAgent && /(nichos?.*(canal|youtube|tiktok|reels|dark|faceless)|canal dark|dark channel)/i.test(cleanMessage)) {
+    try {
+      const result = await FORCED_AGENTS['channel-niche'](args);
+      if (result?.content) {
+        logger.info('[Orchestrator] Auto-routed to channel_niche_research_squad');
+        return result;
+      }
+    } catch (err) {
+      logger.warn(`[Orchestrator] Auto-channel-niche failed: ${err.message}`);
+    }
+  }
+
+  if (!forcedAgent && /(canal dark|dark channel|hist[oó]rias? b[ií]blicas?.*(tiktok|youtube))/i.test(cleanMessage)) {
+    try {
+      const result = await FORCED_AGENTS.dark(args);
+      if (result?.content) return result;
+    } catch (err) {
+      logger.warn(`[Orchestrator] Auto-dark-channel failed: ${err.message}`);
+    }
+  }
+
+  if (!forcedAgent && /(e-?book|infoproduto|curso digital|produto digital)/i.test(cleanMessage)) {
+    try {
+      const result = await FORCED_AGENTS.infoproduct(args);
+      if (result?.content) return result;
+    } catch (err) {
+      logger.warn(`[Orchestrator] Auto-infoproduct failed: ${err.message}`);
     }
   }
 

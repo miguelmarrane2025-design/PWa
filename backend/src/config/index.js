@@ -17,6 +17,10 @@ const toInt = (value, fallback) => {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+const boolFromEnv = (value, fallback = false) => {
+  if (value == null || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+};
 
 const required = (key) => {
   const val = process.env[key];
@@ -49,8 +53,8 @@ export const config = {
   },
 
   openai: {
-    apiKey: optional("OPENAI_API_KEY", ""),
-    model: optional("OPENAI_MODEL", "gpt-4o"),
+    apiKey: optional("OPENAI_API_KEY", optional("OPENAI_API_KEY_1", optional("OPENAI_API_KEY_2", ""))),
+    model: optional("OPENAI_MODEL", optional("DEFAULT_MODEL_STRONG", "gpt-4o")),
     embeddingModel: optional("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
   },
 
@@ -89,9 +93,11 @@ export const config = {
   },
 
   google: {
-    clientId:     optional("GOOGLE_CLIENT_ID"),
-    clientSecret: optional("GOOGLE_CLIENT_SECRET"),
-    redirectUri:  optional("GOOGLE_REDIRECT_URI", "http://localhost:4000/drive/callback"),
+    enabled: boolFromEnv(optional("GOOGLE_DRIVE_ENABLED", optional("GOOGLE_ENABLED", "")), false),
+    clientId:     optional("GOOGLE_DRIVE_CLIENT_ID", optional("GOOGLE_CLIENT_ID")),
+    clientSecret: optional("GOOGLE_DRIVE_CLIENT_SECRET", optional("GOOGLE_CLIENT_SECRET")),
+    redirectUri:  optional("GOOGLE_DRIVE_REDIRECT_URI", optional("GOOGLE_REDIRECT_URI", "http://localhost:4000/drive/callback")),
+    refreshToken: optional("GOOGLE_DRIVE_REFRESH_TOKEN", optional("GOOGLE_REFRESH_TOKEN")),
   },
 
   // ── Multi-provider optional env keys ────────────────────────────────────

@@ -3,12 +3,13 @@
 // Uses integrations-engine fallback chain on the backend.
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Search, TrendingUp, Globe, Youtube, Instagram,
   Loader, AlertCircle, CheckCircle, ChevronDown,
   ChevronUp, ExternalLink, BarChart2, Zap, Copy,
 } from 'lucide-react';
-import { researchApi, socialApi } from '../services/api.js';
+import { catalogApi, researchApi } from '../services/api.js';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -22,18 +23,40 @@ const PLATFORMS = [
 // ─── Status badge ─────────────────────────────────────────────────────────
 function ApiStatusBadge({ status }) {
   if (!status) return null;
-  const entries = Object.entries(status);
+  const entries = Array.isArray(status) ? status : Object.values(status);
   return (
     <div className="flex gap-2 flex-wrap">
-      {entries.map(([key, val]) => (
-        <div key={key} className="flex items-center gap-1 px-2 py-1 rounded-xl text-[10px] font-medium"
-          style={{ background: val.configured ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${val.configured ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.08)'}` }}>
-          {val.configured
-            ? <CheckCircle size={10} style={{ color: '#34d399' }} />
-            : <AlertCircle size={10} style={{ color: '#6b6b7b' }} />}
-          <span style={{ color: val.configured ? '#34d399' : '#6b6b7b' }}>{key}</span>
-        </div>
-      ))}
+      {entries.map(val => {
+        const resolvedStatus = val.status || (val.connected ? 'configured' : val.configured ? 'configured' : 'not_configured');
+        const isConfigured = resolvedStatus === 'configured';
+        const isOffline = resolvedStatus === 'offline';
+
+        return (
+          <div
+            key={val.id}
+            className="flex items-center gap-1 px-2 py-1 rounded-xl text-[10px] font-medium"
+            style={{
+              background: isConfigured
+                ? 'rgba(16,185,129,0.12)'
+                : isOffline
+                  ? 'rgba(245,158,11,0.12)'
+                  : 'rgba(255,255,255,0.05)',
+              border: `1px solid ${isConfigured
+                ? 'rgba(16,185,129,0.3)'
+                : isOffline
+                  ? 'rgba(245,158,11,0.3)'
+                  : 'rgba(255,255,255,0.08)'}`,
+            }}
+          >
+            {isConfigured
+              ? <CheckCircle size={10} style={{ color: '#34d399' }} />
+              : <AlertCircle size={10} style={{ color: isOffline ? '#f59e0b' : '#6b6b7b' }} />}
+            <span style={{ color: isConfigured ? '#34d399' : isOffline ? '#fbbf24' : '#6b6b7b' }}>
+              {val.label} · {resolvedStatus}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -140,25 +163,55 @@ function RecentItems({ items }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────
 export default function SocialResearchPage() {
+  const navigate = useNavigate();
   const [tab,        setTab]        = useState('profile'); // 'profile' | 'trends'
   const [platform,   setPlatform]   = useState('youtube');
   const [url,        setUrl]        = useState('');
   const [niche,      setNiche]      = useState('');
   const [loading,    setLoading]    = useState(false);
   const [result,     setResult]     = useState(null);
-  const [apiStatus,  setApiStatus]  = useState(null);
+  const [apiStatus,  setApiStatus]  = useState([]);
+  const [statusError, setStatusError] = useState('');
 
   useEffect(() => {
-    researchApi.status().then(setApiStatus).catch(() => {});
+    catalogApi.getSystemIntegrations()
+      .catch(() => catalogApi.getIntegrations())
+      .then(data => {
+        setApiStatus((data.integrations || data.items || []).filter(item => item.category === 'social_research' || item.id === 'google_drive'));
+        setStatusError('');
+      })
+      .catch(() => {
+        setStatusError('backend/settings endpoint indisponível');
+      });
   }, []);
+
+  const byId = Object.fromEntries(apiStatus.map(item => [item.id, item]));
+
+  const selectedPlatformWarning = (() => {
+    if (platform === 'youtube' && !byId.youtube?.configured) {
+      return 'YouTube API não configurada. Configure YOUTUBE_API_KEY em Keys/Settings ou use Apify/RapidAPI como fallback.';
+    }
+    if (platform === 'instagram' && !byId.rapidapi?.configured && !byId.instagram?.configured && !byId.apify?.configured) {
+      return 'Instagram API não configurada. Configure RapidAPI, Apify ou provider Instagram em Keys/Settings.';
+    }
+    if (platform === 'tiktok' && !byId.rapidapi?.configured && !byId.tiktok?.configured && !byId.apify?.configured) {
+      return 'TikTok API não configurada. Configure RapidAPI, Apify ou provider TikTok em Keys/Settings.';
+    }
+    return '';
+  })();
 
   const handleAnalyze = async () => {
     if (!url.trim()) return toast.error('Cole a URL ou @handle do perfil');
+    if (selectedPlatformWarning) {
+      toast.error(selectedPlatformWarning);
+      return;
+    }
     setLoading(true);
     setResult(null);
     try {
       const data = await researchApi.profileReal({ url: url.trim(), platform });
       setResult({ type: 'profile', data });
+      if (data?.note) toast(data.note, { icon: 'ℹ️' });
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -191,11 +244,17 @@ export default function SocialResearchPage() {
         <p className="text-xs text-gray-500 mt-1">
           Analise perfis e tendências com dados reais
         </p>
-        {apiStatus && (
-          <div className="mt-2">
-            <ApiStatusBadge status={apiStatus} />
-          </div>
-        )}
+      {apiStatus && (
+        <div className="mt-2">
+          <ApiStatusBadge status={apiStatus} />
+        </div>
+      )}
+      {statusError && (
+        <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          <AlertCircle size={13} className="mt-0.5 shrink-0" />
+          <span>{statusError}</span>
+        </div>
+      )}
       </div>
 
       {/* Tab */}
@@ -237,11 +296,20 @@ export default function SocialResearchPage() {
             onChange={e => setUrl(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleAnalyze()}
           />
-          {!apiStatus?.youtube?.configured && platform === 'youtube' && (
+          {selectedPlatformWarning && (
             <div className="flex items-start gap-2 px-3 py-2 rounded-xl text-xs"
               style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)', color: '#fbbf24' }}>
               <AlertCircle size={13} className="shrink-0 mt-0.5" />
-              YouTube API não configurada — análise via IA. Para dados reais, adicione sua YouTube API key em Configurações.
+              <div className="flex-1">
+                <p>{selectedPlatformWarning}</p>
+                <button
+                  type="button"
+                  onClick={() => navigate('/settings')}
+                  className="mt-2 inline-flex items-center gap-1 rounded-lg border border-amber-400/30 px-2 py-1 text-[11px] font-semibold text-amber-200"
+                >
+                  Configurar em Keys
+                </button>
+              </div>
             </div>
           )}
           <button onClick={handleAnalyze} disabled={loading}
@@ -249,6 +317,23 @@ export default function SocialResearchPage() {
             style={{ background: loading ? '#6b0008' : '#e50914' }}>
             {loading ? <><Loader size={15} className="animate-spin" />Analisando…</> : <><Search size={15} />Analisar Perfil</>}
           </button>
+        </div>
+      )}
+
+      {result?.data?.note && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-xl text-xs"
+          style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', color: '#93c5fd' }}>
+          <AlertCircle size={13} className="shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p>{result.data.note}</p>
+            <button
+              type="button"
+              onClick={() => navigate('/settings')}
+              className="mt-2 inline-flex items-center gap-1 rounded-lg border border-blue-400/30 px-2 py-1 text-[11px] font-semibold text-blue-200"
+            >
+              Configurar em Keys
+            </button>
+          </div>
         </div>
       )}
 

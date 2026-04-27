@@ -151,10 +151,12 @@ export default function CarouselPromptPackCard({ pack, resolveAssetUrl, filename
           className="inline-flex items-center gap-1.5 rounded-xl bg-brand-500 px-3 py-2 text-xs font-black text-white disabled:opacity-40">
           Finalizar carrossel com imagens enviadas
         </button>
-        <button type="button" onClick={finalizeHtmlSvg} disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-gray-700 bg-gray-900/70 px-3 py-2 text-xs font-semibold text-gray-300 disabled:opacity-50 active:bg-gray-700">
-          Finalizar com HTML/SVG mesmo assim
-        </button>
+        {pack.allowManualFallback && (
+          <button type="button" onClick={finalizeHtmlSvg} disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-gray-700 bg-gray-900/70 px-3 py-2 text-xs font-semibold text-gray-300 disabled:opacity-50 active:bg-gray-700">
+            Finalizar com HTML/SVG mesmo assim
+          </button>
+        )}
         <span className="self-center text-xs text-gray-500">{selectedFiles.length ? `${selectedFiles.length}/6 imagens selecionadas` : pack.nextStep}</span>
       </div>
 

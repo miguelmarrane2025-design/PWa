@@ -1,0 +1,157 @@
+[
+  {
+    "input": {
+      "message": "Pesquise nichos para criar um canal dark no TikTok e YouTube sem aparecer",
+      "briefing": {
+        "platforms": ["tiktok", "youtube"],
+        "constraints": { "faceless": true, "noCopyrightRisk": true },
+        "goal": "criar canal dark"
+      }
+    },
+    "output": {
+      "recommendedNiches": [
+        {
+          "niche": "Guitarra Worship",
+          "subniche": "Demonstrações de timbre e preset para músicos de igreja",
+          "channelType": "faceless",
+          "bestPlatforms": ["youtube_long", "youtube_shorts", "tiktok"],
+          "audience": "Guitarristas evangélicos de 18-35 anos que tocam em igrejas e buscam melhorar o timbre sem gastar muito",
+          "corePainOrDesire": "Meu som não encaixa na mix da igreja e não sei qual preset usar na minha pedaleira",
+          "contentDepthScore": 9,
+          "retentionPotential": 8,
+          "monetizationPotential": 9,
+          "facelessPotential": 10,
+          "saturationRisk": 3,
+          "productionDifficulty": 4,
+          "copyrightRisk": 1,
+          "differentiationAngle": "Focar em equipamentos baratos (M-Vave, Zoom G1, NUX) com resultados profissionais — nicho completamente ignorado pelos canais grandes",
+          "whyItCanWork": ["Audiência apaixonada e fiel", "Monetiza diretamente com IRs e presets", "Conteúdo infinito: cada pedaleira × estilo × música = novo vídeo"],
+          "whyItCanFail": ["Nicho técnico exige produção de áudio de qualidade", "Comparações podem ser subjetivas", "Pode saturar com muitos clones"],
+          "recommendedFormats": ["Tutorial de preset", "Comparação de pedaleiras baratas", "Som da minha guitarra em 30s", "Antes/depois do timbre"],
+          "first30VideoIdeas": [
+            "Preset worship para Zoom G1 Four — som profissional sem gastar",
+            "M-Vave Tank-G: o melhor custo-benefício para guitarristas de igreja?",
+            "3 IRs que transformam qualquer pedaleira barata",
+            "Como encaixar a guitarra na mix sem EQ externo",
+            "HX Stomp vs Zoom G1 — qual comprar se você é músico de igreja?",
+            "Preset ambient para o momento de adoração — tutorial completo",
+            "Por que sua guitarra some na mix (e como resolver)",
+            "5 ajustes de preset que ninguém te conta",
+            "Zoom G3 para worship — vale em 2025?",
+            "Construindo o timbre worship perfeito do zero",
+            "Lead worship com pedaleira de entrada",
+            "Reação: guitarrista de sucesso revela seu preset secreto",
+            "Base limpa para os momentos de ministração",
+            "Como configurar o noise gate sem matar o sustain",
+            "O melhor reverb para guitarra gospel — comparativo",
+            "Delay pingpong para worship — tutorial passo a passo",
+            "Testando IRs gratuitos vs premium — vale a pena pagar?",
+            "Fiz um preset completo com pedaleira de R$300",
+            "3 erros de timbre que guitarristas de igreja cometem",
+            "Como gravar guitarra direto no computador com qualidade de estúdio",
+            "Preset rock gospel — diferença do worship tradicional",
+            "Minha pedaleira barata soa como Line 6 Helix?",
+            "Como fazer solo gospel que emociona a congregação",
+            "Timbre da virada — a guitarra que todo músico de igreja quer",
+            "Comparativo: 5 pedaleiras abaixo de R$500 para church",
+            "Criando um banco completo de presets do zero",
+            "Testando cada IR do meu pack — qual encaixa no worship?",
+            "O segredo do volume de guitarra no louvor",
+            "Setup completo para músico de igreja com orçamento limitado",
+            "Resultado real: antes e depois do meu timbre após 6 meses"
+          ],
+          "monetizationPaths": ["Venda de IR packs", "Preset packs pagos", "Curso de timbre worship", "Afiliado de pedaleiras", "AdSense", "Comunidade mensal"],
+          "competitorPatterns": ["Canais grandes não focam em equipamento barato", "Poucos canais em português com qualidade técnica", "Thumbnails com guitarras e números funcionam"],
+          "nextStep": "Gravar os 3 primeiros vídeos comparando pedaleiras baratas: Zoom G1 Four, M-Vave Tank-G e NUX MG-30. Postar em 7 dias."
+        }
+      ],
+      "rejectedNiches": [
+        {
+          "niche": "Música gospel genérica",
+          "reason": "Nicho muito amplo e saturado sem ângulo específico",
+          "risk": "Conteúdo sem diferencial, impossível de crescer organicamente"
+        }
+      ],
+      "channelStrategyDraft": {
+        "positioning": "O canal de guitarra worship que ensina timbre profissional com equipamento acessível",
+        "contentPillars": ["Preset e timbre", "Pedaleiras baratas", "Técnica worship", "IRs e mix"],
+        "postingCadence": "2-3 vídeos por semana no início (Shorts diários + 1 long por semana)",
+        "firstExperiments": ["Testar thumbnail com guitarra + nome da pedaleira", "Testar títulos com 'R$300' ou 'barato' vs 'profissional'"]
+      },
+      "review": {
+        "approved": true,
+        "score": 92,
+        "strengths": ["Nicho específico e com monetização direta", "30 ideias completas", "Ângulo de diferenciação claro"],
+        "issues": [],
+        "mustFix": [],
+        "niceToHave": ["Adicionar análise de kwai para monetização adicional"]
+      }
+    },
+    "score": 92,
+    "approved": true
+  },
+  {
+    "input": {
+      "message": "Pesquise nichos para canal dark de histórias bíblicas",
+      "briefing": {
+        "platforms": ["youtube", "tiktok"],
+        "constraints": { "faceless": true, "noCopyrightRisk": true },
+        "goal": "criar canal dark"
+      }
+    },
+    "output": {
+      "recommendedNiches": [
+        {
+          "niche": "Histórias Bíblicas Dramatizadas",
+          "subniche": "Narrativas de personagens bíblicos com trilha cinematográfica",
+          "channelType": "dark",
+          "bestPlatforms": ["youtube_long", "youtube_shorts", "tiktok"],
+          "facelessPotential": 10,
+          "saturationRisk": 4,
+          "copyrightRisk": 2,
+          "differentiationAngle": "Focar em personagens secundários ignorados — Gideão, Débora, Josué, Nabucodonosor — que têm histórias épicas mas pouco conteúdo disponível",
+          "monetizationPaths": ["AdSense", "Infoprodutos de estudo bíblico", "Comunidade", "Afiliado de Bíblias/estudos"],
+          "first30VideoIdeas": [
+            "A história de Gideão: o covarde que se tornou guerreiro",
+            "Débora: a única juíza de Israel e o que isso nos ensina hoje",
+            "O dia em que o sol parou — Josué 10 (a verdade histórica)",
+            "Nabucodonosor: de rei dos reis ao pasto como um animal",
+            "A mulher que matou o general inimigo com uma estaca",
+            "José do Egito: 13 anos de prisão antes de chegar ao poder",
+            "O rei que escreveu a maioria dos Salmos sendo perseguido",
+            "Maria Madalena: a verdade que a história apagou",
+            "O discípulo que todos julgam: Judas foi escolhido para trair?",
+            "Sansão e Dalila: a história de amor que destruiu um ungido",
+            "A mulher de Lot: por que ela olhou para trás?",
+            "O anjo que lutou com Jacó — quem realmente era?",
+            "Salomão pediu sabedoria — mas o que pediu depois?",
+            "Ezequias: o rei que chorou e ganhou 15 anos de vida",
+            "João Batista: a vida e a morte do maior profeta",
+            "O homem que ficou 38 anos esperando sua cura",
+            "Por que Deus pediu a Abraão para sacrificar Isaque?",
+            "A história real por trás do Dilúvio — o que a ciência encontrou",
+            "Rute e Noemi: a lealdade mais bonita da Bíblia",
+            "O prodígio que era músico antes de ser rei: Davi menino",
+            "Elias e a depressão: quando o profeta quis morrer",
+            "O cego de Betesda: por que Jesus perguntou 'queres ser curado'?",
+            "Zacarias: o homem mais baixo que subiu mais alto",
+            "A mulher adúltera: o que Jesus escrevia na areia?",
+            "Ananias e Safira: a morte instantânea que chocou a igreja",
+            "Paulo: de assassino de cristãos a maior missionário",
+            "O ladrão na cruz: o primeiro convertido do Novo Testamento",
+            "Neemias: o copeiro que reconstruiu uma cidade em 52 dias",
+            "Ester: a mulher que salvou um povo inteiro",
+            "Daniel na cova dos leões: o que aconteceu de fato?"
+          ]
+        }
+      ],
+      "review": {
+        "approved": true,
+        "score": 89,
+        "strengths": ["30 ideias específicas com títulos completos", "Ângulo de diferenciação claro", "Monetização múltipla"]
+      }
+    },
+    "score": 89,
+    "approved": true
+  }
+]

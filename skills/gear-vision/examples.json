@@ -1,0 +1,70 @@
+[
+  {
+    "input": {
+      "context": "Foto da minha M-Vave Tank-G",
+      "targetStyle": "worship ambient"
+    },
+    "output": {
+      "recognized": true,
+      "confidence": 0.95,
+      "device": {
+        "brand": "M-Vave",
+        "model": "Tank-G",
+        "category": "multi_fx",
+        "tier": "budget",
+        "knownLimitations": ["IR de baixa resolução", "Sem MIDI avançado", "Sem snapshots"],
+        "candidates": []
+      },
+      "visibleSettings": {
+        "chain": [],
+        "ir": { "slots": 2, "sampleRate": "48000" },
+        "global": { "sampleRates": ["44100", "48000"] }
+      },
+      "unreadableFields": ["Valores de knobs não visíveis na foto"],
+      "inferred": ["6 blocos disponíveis", "Suporta IR externo (2 slots)"],
+      "warnings": ["IR de baixa resolução — usar IR curto (< 200ms)"],
+      "presetRecommendations": ["Criar preset worship ambient compatível com Tank-G"],
+      "questionsForUser": ["Quais parâmetros do amp estão configurados?"]
+    },
+    "score": 92,
+    "approved": true
+  },
+  {
+    "input": {
+      "context": "Zoom G1 Four — quero timbre worship",
+      "targetStyle": "worship balanced"
+    },
+    "output": {
+      "recognized": true,
+      "confidence": 0.98,
+      "device": {
+        "brand": "Zoom",
+        "model": "G1 Four",
+        "category": "multi_fx",
+        "tier": "budget",
+        "knownLimitations": ["Sem IR nativo", "Cab Sim interno apenas", "Máx 5 blocos simultâneos"],
+        "candidates": []
+      },
+      "inferred": ["5 blocos disponíveis", "Sem suporte a IR externo — usar Cab Sim interno"],
+      "warnings": ["Não sugerido IR loader interno — equipamento não suporta"],
+      "presetRecommendations": ["Usar Cab Sim interno + EQ + Reverb para worship balanced"],
+      "questionsForUser": []
+    },
+    "score": 95,
+    "approved": true
+  },
+  {
+    "input": {
+      "context": "Foto borrada da pedaleira",
+      "targetStyle": "worship"
+    },
+    "output": {
+      "recognized": false,
+      "confidence": 0.1,
+      "warnings": ["Imagem borrada — não foi possível identificar o equipamento"],
+      "questionsForUser": ["Por favor envie uma foto mais nítida ou descreva o modelo da pedaleira"]
+    },
+    "score": 0,
+    "approved": false
+  }
+]

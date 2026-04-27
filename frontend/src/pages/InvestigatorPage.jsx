@@ -51,10 +51,13 @@ export default function InvestigatorPage() {
   const [target, setTarget] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-  const [integrations, setIntegrations] = useState({ items: [] });
+  const [integrations, setIntegrations] = useState({ integrations: [] });
 
   useEffect(() => {
-    catalogApi.getIntegrations().then(setIntegrations).catch(() => {});
+    catalogApi.getSystemIntegrations()
+      .catch(() => catalogApi.getIntegrations())
+      .then(setIntegrations)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -67,7 +70,8 @@ export default function InvestigatorPage() {
   }, [searchParams]);
 
   const availability = useMemo(() => {
-    const map = Object.fromEntries((integrations.items || []).map(item => [item.id, item]));
+    const list = integrations.integrations || integrations.items || [];
+    const map = Object.fromEntries(list.map(item => [item.id, item]));
     return {
       youtube: map.youtube?.connected,
       instagram: map.rapidapi?.connected || map.meta?.connected,

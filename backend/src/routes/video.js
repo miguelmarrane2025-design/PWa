@@ -6,7 +6,7 @@ import { Router }         from 'express';
 import multer             from 'multer';
 import path               from 'path';
 import { promises as fs } from 'fs';
-import { createWriteStream } from 'fs';
+import { createReadStream, createWriteStream } from 'fs';
 import { Readable } from 'stream';
 import { pipeline as pipelineCallback } from 'stream';
 import { promisify } from 'util';
@@ -18,6 +18,7 @@ import { logger }         from '../lib/logger.js';
 import { jobQueue }       from '../lib/job-queue.js';
 import { v4 as uuidv4 }  from 'uuid';
 import { processVideoJob as runVideoPipeline } from '../video/videoPipeline.js';
+import { detectVideoSource, getManualUploadMessage, normalizeUrl } from '../video/sourceDetector.js';
 
 const router  = Router();
 const OUT_DIR = config.storage.output || '/app/storage/outputs';
@@ -26,6 +27,7 @@ const VIDEO_UPLOAD_ROOT = path.join(config.storage.upload, 'videos');
 const VIDEO_ORIGINAL_DIR = path.join(VIDEO_UPLOAD_ROOT, 'original');
 const VIDEO_CHUNKS_DIR = path.join(VIDEO_UPLOAD_ROOT, 'chunks');
 const VIDEO_META_DIR = path.join(config.storage.jobs || path.join(path.dirname(config.storage.upload), 'jobs'), 'videos');
+const VIDEO_JOB_DIR = path.join(config.storage.jobs || path.join(path.dirname(config.storage.upload), 'jobs'), 'video');
 const CHUNK_SIZE = 10 * 1024 * 1024;
 
 const upload = multer({
@@ -137,7 +139,7 @@ router.post('/upload/complete', requireAuth, async (req, res) => {
     for (let i = 0; i < Number.parseInt(totalChunks, 10); i += 1) {
       const chunkPath = path.join(dir, `chunk_${String(i).padStart(6, '0')}.part`);
       await fs.access(chunkPath).catch(() => { throw new Error(`Chunk ausente: ${i}`); });
-      await pipeline(Readable.from(await fs.readFile(chunkPath)), out, { end: false });
+      await pipeline(createReadStream(chunkPath), out, { end: false });
     }
   } finally {
     out.end();
@@ -163,15 +165,20 @@ router.post('/upload/complete', requireAuth, async (req, res) => {
 // ── Import video by URL ───────────────────────────────────────────────────
 router.post('/import-url', requireAuth, async (req, res) => {
   await ensureVideoStorage();
-  const { url, source = 'direct' } = req.body || {};
+  const { url } = req.body || {};
   if (!/^https?:\/\//i.test(url || '')) return res.status(400).json({ error: 'URL inválida.' });
+  const source = detectVideoSource(url);
+  if (['youtube', 'tiktok', 'unknown'].includes(source)) {
+    return res.status(422).json(getManualUploadMessage(source));
+  }
   const videoId = uuidv4();
   const finalPath = path.join(VIDEO_ORIGINAL_DIR, `${videoId}${extFromName(url)}`);
   try {
+    const downloadUrl = normalizeUrl(url, source);
     if (source === 'google_drive') {
-      await downloadFromGoogleDrive(url, finalPath);
+      await downloadFromGoogleDrive(downloadUrl, finalPath);
     } else {
-      await downloadDirect(url, finalPath);
+      await downloadDirect(downloadUrl, finalPath);
     }
     const stat = await fs.stat(finalPath);
     await saveVideoMeta({
@@ -216,8 +223,7 @@ router.post('/import-server-file', requireAuth, async (req, res) => {
   res.status(201).json({ ok: true, videoId, filePath: toPublicVideoPath(requested) });
 });
 
-// ── New /api/video/jobs flow: process an already uploaded video ───────────
-router.post('/jobs', requireAuth, async (req, res) => {
+async function createPipelineJob(req, res) {
   const { videoId, cutType = 'auto', platform = 'auto', captionStyle = 'classic', instruction = '' } = req.body || {};
   if (!videoId) return res.status(400).json({ error: 'videoId obrigatório.' });
   const video = await loadVideoMeta(videoId).catch(() => null);
@@ -236,9 +242,22 @@ router.post('/jobs', requireAuth, async (req, res) => {
       cutType,
       platform,
       captionStyle,
-      outputs: [],
+        outputs: [],
     })],
   );
+  await writeJobSnapshot(jobId, {
+    jobId,
+    userId: req.user.id,
+    status: 'queued',
+    stage: 'queued',
+    progress: 0,
+    message: 'Na fila',
+    videoId,
+    cutType,
+    platform,
+    captionStyle,
+    outputs: [],
+  });
   logger.info(`[VideoRoute] job criado id=${jobId} videoId=${videoId} path=${video.filePath}`);
   res.status(202).json({ ok: true, jobId, status: 'queued' });
 
@@ -252,7 +271,11 @@ router.post('/jobs', requireAuth, async (req, res) => {
     captionStyle,
     instruction: message,
   }));
-});
+}
+
+// ── New /api/video/pipeline/jobs flow: process an already uploaded video ──
+router.post('/pipeline/jobs', requireAuth, createPipelineJob);
+router.post('/jobs', requireAuth, createPipelineJob);
 
 async function processUploadedVideoJob({ jobId, userId, videoId, inputPath, cutType, platform, captionStyle, instruction }) {
   const setProgress = async ({ progress, message }) => {
@@ -264,6 +287,18 @@ async function processUploadedVideoJob({ jobId, userId, videoId, inputPath, cutT
        WHERE id=$3 AND user_id=$4`,
       [stageFromMessage(message), JSON.stringify({ progress, message }), jobId, userId],
     ).catch(() => {});
+    await writeJobSnapshot(jobId, {
+      jobId,
+      userId,
+      videoId,
+      cutType,
+      platform,
+      captionStyle,
+      status: 'processing',
+      stage: stageFromMessage(message),
+      progress,
+      message,
+    });
     logger.info(`[VideoJob:${jobId}] ${progress}% ${message}`);
   };
 
@@ -278,24 +313,65 @@ async function processUploadedVideoJob({ jobId, userId, videoId, inputPath, cutT
       instruction,
       onProgress: setProgress,
     });
-    const outputs = result.outputs.map(o => ({
+    const outputs = (result.outputs || []).map(o => ({
       ...o,
-      downloadUrl: `/video/download/${jobId}/${o.file}`,
+      downloadUrl: `/api/video/clips/${jobId}/${o.file}`,
     }));
+    const validOutputs = outputs.filter(output => output?.file && output?.path);
+    if (validOutputs.length === 0) {
+      const message = 'Nenhum corte foi gerado';
+      await query(
+        `UPDATE video_jobs
+         SET status='error', stage='error',
+             stats = COALESCE(stats, '{}'::jsonb) || $1::jsonb,
+             updated_at=NOW()
+         WHERE id=$2 AND user_id=$3`,
+        [JSON.stringify({ progress: 100, message, outputs: [] }), jobId, userId],
+      );
+      await writeJobSnapshot(jobId, {
+        jobId,
+        userId,
+        videoId,
+        cutType,
+        platform,
+        captionStyle,
+        status: 'needs_attention',
+        stage: 'error',
+        progress: 100,
+        message,
+        outputs: [],
+      });
+      return;
+    }
     await query(
       `UPDATE video_jobs
        SET status='done', stage='done', output_path=$1,
            stats = COALESCE(stats, '{}'::jsonb) || $2::jsonb,
            updated_at=NOW()
        WHERE id=$3 AND user_id=$4`,
-      [outputs[0]?.path || null, JSON.stringify({
+      [validOutputs[0]?.path || null, JSON.stringify({
         progress: 100,
         message: 'Finalizado',
-        outputs,
+        outputs: validOutputs,
         topClips: result.cuts,
         probe: result.probe,
       }), jobId, userId],
     );
+    await writeJobSnapshot(jobId, {
+      jobId,
+      userId,
+      videoId,
+      cutType,
+      platform,
+      captionStyle,
+      status: 'done',
+      stage: 'done',
+      progress: 100,
+      message: 'Finalizado',
+      outputs: validOutputs,
+      topClips: result.cuts,
+      probe: result.probe,
+    });
   } catch (err) {
     logger.error(`[VideoJob:${jobId}] failed: ${err.message}`);
     await query(
@@ -304,6 +380,19 @@ async function processUploadedVideoJob({ jobId, userId, videoId, inputPath, cutT
        updated_at=NOW() WHERE id=$3 AND user_id=$4`,
       [err.message.slice(0, 500), JSON.stringify({ progress: 100, message: 'Erro' }), jobId, userId],
     ).catch(() => {});
+    await writeJobSnapshot(jobId, {
+      jobId,
+      userId,
+      videoId,
+      cutType,
+      platform,
+      captionStyle,
+      status: 'error',
+      stage: 'error',
+      progress: 100,
+      message: 'Erro',
+      error: err.message.slice(0, 500),
+    });
   }
 }
 
@@ -337,6 +426,7 @@ async function ensureVideoStorage() {
     fs.mkdir(VIDEO_ORIGINAL_DIR, { recursive: true }),
     fs.mkdir(VIDEO_CHUNKS_DIR, { recursive: true }),
     fs.mkdir(VIDEO_META_DIR, { recursive: true }),
+    fs.mkdir(VIDEO_JOB_DIR, { recursive: true }),
     fs.mkdir(path.join(config.storage.output, 'videos'), { recursive: true }),
     fs.mkdir(path.join(config.storage.temp, 'video'), { recursive: true }),
   ]);
@@ -371,6 +461,24 @@ function mapJobStatus(status) {
   return status === 'pending' ? 'queued' : status;
 }
 
+function jobSnapshotPath(jobId) {
+  return path.join(VIDEO_JOB_DIR, jobId, 'job.json');
+}
+
+async function writeJobSnapshot(jobId, patch) {
+  await ensureVideoStorage();
+  const target = jobSnapshotPath(jobId);
+  const current = await fs.readFile(target, 'utf8').then(JSON.parse).catch(() => ({}));
+  const next = {
+    ...current,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+    createdAt: current.createdAt || new Date().toISOString(),
+  };
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, JSON.stringify(next, null, 2));
+}
+
 // ── Shared job processor (used by route + crash recovery) ─────────────────
 export async function processVideoJob(jobId, userId, message, files) {
   const inputPaths = Array.isArray(files)
@@ -382,6 +490,7 @@ export async function processVideoJob(jobId, userId, message, files) {
       `UPDATE video_jobs SET stage=$1, updated_at=NOW() WHERE id=$2`,
       [stage, jobId],
     ).catch(() => {});
+    await writeJobSnapshot(jobId, { jobId, userId, status: 'processing', stage, message: stage });
     logger.info(`[VideoJob:${jobId}] stage=${stage}`);
   };
 
@@ -422,6 +531,17 @@ export async function processVideoJob(jobId, userId, message, files) {
        WHERE id=$4`,
       [outputPath, captionsPath, JSON.stringify(stats), jobId],
     ).catch(() => {});
+    await writeJobSnapshot(jobId, {
+      jobId,
+      userId,
+      status: 'done',
+      stage: 'done',
+      progress: 100,
+      message: 'Finalizado',
+      outputPath,
+      captionsPath,
+      stats,
+    });
 
   } catch (err) {
     logger.error(`[VideoJob:${jobId}] failed: ${err.message}`);
@@ -429,13 +549,22 @@ export async function processVideoJob(jobId, userId, message, files) {
       `UPDATE video_jobs SET status='error', stage='error', error=$1, updated_at=NOW() WHERE id=$2`,
       [err.message.slice(0, 500), jobId],
     ).catch(() => {});
+    await writeJobSnapshot(jobId, {
+      jobId,
+      userId,
+      status: 'error',
+      stage: 'error',
+      progress: 100,
+      message: 'Erro',
+      error: err.message.slice(0, 500),
+    });
   } finally {
     // Clean up temp files (already done inside videoAgent but guard here too)
     for (const p of inputPaths) await fs.unlink(p).catch(() => {});
   }
 }
 
-// ── POST /video/edit ──────────────────────────────────────────────────────
+// ── POST /video/edit (legado; manter apenas compatibilidade) ─────────────
 router.post('/edit', requireAuth, upload.array('files', 3), async (req, res) => {
   const message = normalizeVideoRequest(req.body.message || 'editar vídeo automaticamente');
   const files   = req.files ?? [];
@@ -489,7 +618,7 @@ function normalizeVideoRequest(message) {
 }
 
 // ── GET /video/jobs/:id ───────────────────────────────────────────────────
-router.get('/jobs/:id', requireAuth, async (req, res) => {
+async function getPipelineJob(req, res) {
   const { rows } = await query(
     `SELECT id, status, stage, error, stats, output_path, captions_path, created_at, updated_at
      FROM video_jobs WHERE id=$1 AND user_id=$2`,
@@ -505,7 +634,7 @@ router.get('/jobs/:id', requireAuth, async (req, res) => {
       ...o,
       downloadUrl: o.downloadUrl?.startsWith('http')
         ? o.downloadUrl
-        : `${backendBase}${o.downloadUrl || `/video/download/${job.id}/${o.file}`}`,
+        : (o.downloadUrl || `/api/video/clips/${job.id}/${o.file}`),
     }))
     : [];
 
@@ -520,18 +649,21 @@ router.get('/jobs/:id', requireAuth, async (req, res) => {
     error:       job.error,
     stats:       { ...stats, outputs },
     downloadUrl: job.output_path
-      ? `${backendBase}/video/download/${job.id}/${path.basename(job.output_path)}`
+      ? `/api/video/clips/${job.id}/${path.basename(job.output_path)}`
       : null,
     captionsUrl: job.captions_path
-      ? `${backendBase}/video/download/${job.id}/${path.basename(job.captions_path)}`
+      ? `/api/video/clips/${job.id}/${path.basename(job.captions_path)}`
       : null,
     createdAt:  job.created_at,
     updatedAt:  job.updated_at,
   });
-});
+}
+
+router.get('/pipeline/jobs/:id', requireAuth, getPipelineJob);
+router.get('/jobs/:id', requireAuth, getPipelineJob);
 
 // ── GET /video/jobs ───────────────────────────────────────────────────────
-router.get('/jobs', requireAuth, async (req, res) => {
+async function listPipelineJobs(req, res) {
   const { rows } = await query(
     `SELECT id, status, stage, error, stats, created_at, updated_at
      FROM video_jobs WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20`,
@@ -543,10 +675,13 @@ router.get('/jobs', requireAuth, async (req, res) => {
     progress: row.stats?.progress ?? (row.status === 'done' ? 100 : 0),
     message: row.stats?.message || row.stage,
   })));
-});
+}
+
+router.get('/pipeline/jobs', requireAuth, listPipelineJobs);
+router.get('/jobs', requireAuth, listPipelineJobs);
 
 // ── GET /video/download/:jobId/:filename ──────────────────────────────────
-router.get('/download/:jobId/:filename', requireAuth, async (req, res) => {
+async function downloadClip(req, res) {
   const { rows } = await query(
     `SELECT output_path, captions_path FROM video_jobs WHERE id=$1 AND user_id=$2`,
     [req.params.jobId, req.user.id],
@@ -581,7 +716,10 @@ router.get('/download/:jobId/:filename', requireAuth, async (req, res) => {
   } catch {
     res.status(404).json({ error: 'Arquivo não encontrado ou expirado.' });
   }
-});
+}
+
+router.get('/download/:jobId/:filename', requireAuth, downloadClip);
+router.get('/clips/:jobId/:filename', requireAuth, downloadClip);
 
 // ── POST /video/chat ──────────────────────────────────────────────────────
 router.post('/chat', requireAuth, async (req, res) => {

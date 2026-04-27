@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { promisify } from 'util';
 import { exec as execCallback } from 'child_process';
-import { requireAuth } from '../middleware/auth.js';
+import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import { getDatabaseStatus, query } from '../db/index.js';
 import { skillManager } from '../skills/skill-manager.js';
 import { workflowOrchestrator } from '../modules/workflow-orchestrator.js';
@@ -10,9 +10,14 @@ import { analyzeProfile } from '../integrations/social-apis.js';
 import { researchAgent } from '../agents/researchAgent.js';
 import { getSettingsProviderCatalog } from '../lib/settings-catalog.js';
 import { config } from '../config/index.js';
+import { getSystemDiagnostics } from '../system/catalog.js';
+import { getSystemProviderStatus } from '../system/providers.js';
+import { getSystemIntegrations } from '../system/integrations.js';
 
 const router = Router();
 const exec = promisify(execCallback);
+
+router.use(optionalAuth);
 
 async function getProvidersForUser(userId) {
   const catalog = getSettingsProviderCatalog();
@@ -298,6 +303,83 @@ router.get('/skills', requireAuth, async (req, res) => {
     items,
     stats,
     workflows,
+  });
+});
+
+router.get('/system/agents', async (req, res) => {
+  const diagnostics = await getSystemDiagnostics();
+  res.json({
+    agents: diagnostics.agents,
+    skills: diagnostics.skills,
+    orphanAgents: diagnostics.orphanAgents,
+    orphanSkills: diagnostics.orphanSkills,
+    duplicateMappings: diagnostics.duplicateMappings,
+    activeMappings: diagnostics.activeMappings,
+    missingRequiredAgents: diagnostics.missingRequiredAgents,
+    missingRequiredSkills: diagnostics.missingRequiredSkills,
+    inactiveMappings: diagnostics.inactiveMappings,
+    health: diagnostics.health,
+  });
+});
+
+router.get('/system/skills', async (req, res) => {
+  const diagnostics = await getSystemDiagnostics();
+  const filteredSkills = req.query.domain
+    ? diagnostics.skills.filter(skill => (skill.dominios || []).includes(String(req.query.domain)))
+    : diagnostics.skills;
+  res.json({
+    agents: diagnostics.agents,
+    skills: filteredSkills,
+    orphanAgents: diagnostics.orphanAgents,
+    orphanSkills: diagnostics.orphanSkills,
+    duplicateMappings: diagnostics.duplicateMappings,
+    activeMappings: diagnostics.activeMappings,
+    missingRequiredAgents: diagnostics.missingRequiredAgents,
+    missingRequiredSkills: diagnostics.missingRequiredSkills,
+    inactiveMappings: diagnostics.inactiveMappings,
+    workflows: diagnostics.workflows,
+    stats: diagnostics.stats,
+    health: diagnostics.health,
+  });
+});
+
+router.get('/system/providers', async (req, res) => {
+  res.json(getSystemProviderStatus());
+});
+
+router.get('/system/integrations', async (req, res) => {
+  res.json(await getSystemIntegrations(req.user?.id || null));
+});
+
+router.get('/system/health', async (req, res) => {
+  const database = getDatabaseStatus();
+  const [audio, video] = await Promise.all([getAudioHealth(), getVideoHealth()]);
+  const diagnostics = await getSystemDiagnostics();
+  const providerStatus = getSystemProviderStatus();
+  const integrationStatus = await getSystemIntegrations(req.user?.id || null);
+
+  const integrations = Object.fromEntries(
+    (integrationStatus.integrations || []).map(item => [item.id, item.status]),
+  );
+
+  res.json({
+    ok: true,
+    backend: database.connected ? 'healthy' : 'degraded',
+    status: database.connected ? 'ok' : 'degraded',
+    service: 'botsquad-backend',
+    version: '22.0.0',
+    time: new Date().toISOString(),
+    skillsCount: diagnostics.skills?.length || 0,
+    providersCount: (providerStatus.providers || []).filter(item => item.configured || item.enabled).length,
+    integrations,
+    database: database.connected ? 'ok' : 'degraded',
+    audio: audio.status || 'degraded',
+    video: video.status || 'degraded',
+    details: {
+      database,
+      audio,
+      video,
+    },
   });
 });
 

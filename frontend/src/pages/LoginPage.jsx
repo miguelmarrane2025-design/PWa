@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore }    from '../store/auth.js';
-import { BASE, healthApi } from '../services/api.js';
+import { BASE, catalogApi, healthApi } from '../services/api.js';
 import { Eye, EyeOff, Lock, Mail, User, Wifi, WifiOff } from 'lucide-react';
 import toast               from 'react-hot-toast';
 import './login.css';
@@ -50,6 +50,7 @@ export default function LoginPage() {
   const [loading,    setLoading]   = useState(false);
   const [showPass,   setShowPass]  = useState(false);
   const [backendOk,  setBackendOk] = useState(null); // null=checking, true=ok, false=unreachable
+  const [registrationDisabled, setRegistrationDisabled] = useState(false);
   const { login, register }        = useAuthStore();
   const navigate                   = useNavigate();
 
@@ -58,6 +59,13 @@ export default function LoginPage() {
     healthApi.check()
       .then(() => setBackendOk(true))
       .catch(() => setBackendOk(false));
+    catalogApi.getSystemHealth()
+      .then(data => {
+        const disabled = data?.privateMode === true || data?.disablePublicRegistration === true;
+        setRegistrationDisabled(disabled);
+        if (disabled) setMode('login');
+      })
+      .catch(() => {});
   }, []);
 
   const handleSubmit = async () => {
@@ -155,7 +163,7 @@ export default function LoginPage() {
 
           <div className="auth-tabs">
             <span className={`auth-tab-indicator ${mode === 'register' ? 'is-register' : ''}`} />
-            {['login','register'].map(m => (
+            {['login', ...(registrationDisabled ? [] : ['register'])].map(m => (
               <button
                 key={m}
                 type="button"
@@ -168,7 +176,7 @@ export default function LoginPage() {
           </div>
 
           <div className="auth-form-stack" key={mode}>
-            {mode === 'register' && (
+            {mode === 'register' && !registrationDisabled && (
               <label className="auth-field">
                 <User size={18} />
                 <input

@@ -37,6 +37,15 @@ const MAX_RETRIES  = parseInt(process.env.OPENAI_MAX_RETRIES || '3');
 const BASE_DELAY   = 1000;
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
 
+function buildTokenLimitOptions(model, maxTokens) {
+  const normalized = String(model || '').toLowerCase();
+  const value = maxTokens ?? 2048;
+  if (/^(gpt-5|o1|o3|o4)/i.test(normalized)) {
+    return { max_completion_tokens: value };
+  }
+  return { max_tokens: value };
+}
+
 // ── Provider registry ──────────────────────────────────────────────────────
 // Each provider entry has:
 //   envKey:      env var for a global fallback key
@@ -50,8 +59,8 @@ const PROVIDERS = {
     envKey:       'OPENAI_API_KEY',
     envModel:     'OPENAI_MODEL',
     // Strong model: gpt-4o → gpt-4.1 → gpt-4.1-mini fallback chain via env
-    defaultModel: process.env.OPENAI_MODEL || 'gpt-4o',
-    fastModel:    process.env.OPENAI_MODEL_FAST || 'gpt-4o-mini',
+    defaultModel: process.env.OPENAI_MODEL || process.env.DEFAULT_MODEL_STRONG || 'gpt-4o',
+    fastModel:    process.env.OPENAI_MODEL_FAST || process.env.DEFAULT_MODEL_MINI || 'gpt-4o-mini',
     embedModel:   process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
     buildClient(apiKey) {
       const oa = new OpenAI({ apiKey, timeout: parseInt(process.env.OPENAI_TIMEOUT_MS || '60000') });
@@ -61,8 +70,8 @@ const PROVIDERS = {
           const res = await oa.chat.completions.create({
             model:       opts.model,
             messages,
-            max_tokens:  opts.max_tokens  ?? 2048,
             temperature: opts.temperature ?? 0.7,
+            ...buildTokenLimitOptions(opts.model, opts.max_tokens ?? 2048),
           });
           return {
             content: res.choices[0]?.message?.content ?? '',
@@ -605,7 +614,11 @@ export function getProviderCatalog() {
     defaultModel: p.defaultModel,
     fastModel:    p.fastModel,
     envKey:       p.envKey,
-    available:    id === 'ollama' ? true : !!(process.env[p.envKey]),
+    available:    id === 'ollama'
+      ? true
+      : id === 'openai'
+        ? !!(process.env[p.envKey] || process.env.OPENAI_API_KEY_1 || process.env.OPENAI_API_KEY_2)
+        : !!(process.env[p.envKey]),
     isLocal:      id === 'ollama',
     label:        id === 'ollama' ? 'Ollama (Gemma Local)' : undefined,
   }));

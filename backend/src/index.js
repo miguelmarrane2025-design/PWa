@@ -26,6 +26,10 @@ import socialRoutes   from './routes/social.js';
 import videoRoutes    from './routes/video.js';
 import carouselRoutes from './routes/carousel.js';
 import apiRoutes      from './routes/api.js';
+import systemRoutes   from './routes/system.js';
+import trainingRoutes from './routes/training.js';
+import privateAccessRouter from './routes/privateAccess.js';
+import { privateAccessGuard } from './auth/privateAccessGuard.js';
 import { jobQueue }    from './lib/job-queue.js';
 import { scheduleCleanup } from './lib/storage-cleanup.js';
 import { processVideoJob } from './routes/video.js';
@@ -47,6 +51,7 @@ const ALLOWED_ORIGINS = (process.env.CORS_ORIGIN || DEFAULT_ALLOWED_ORIGINS.join
   .map(o => o.trim())
   .filter(Boolean);
 
+app.set('trust proxy', 1);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
   origin: (origin, cb) => {
@@ -75,6 +80,7 @@ app.use(rateLimit({
 // Serve storage outputs statically (PDFs, audio exports, etc.)
 // Videos are served via /video/download with ownership check
 app.use('/storage/outputs', express.static(config.storage.output));
+app.use(privateAccessGuard);
 
 app.get('/health', (req, res) => {
   const database = getDatabaseStatus();
@@ -87,7 +93,10 @@ app.get('/health', (req, res) => {
   });
 });
 
+app.use('/auth',     privateAccessRouter);
+app.use('/api/auth', privateAccessRouter);
 app.use('/auth',     flowMiddleware('auth'),     authRoutes);
+app.use('/api/auth', flowMiddleware('auth'),     authRoutes);
 app.use('/agents',   flowMiddleware('agents'),   agentsRoutes);
 app.use('/orchestrator', flowMiddleware('orchestrator'), orchestratorRoutes);
 app.use('/research', flowMiddleware('research'), researchRoutes);
@@ -99,12 +108,16 @@ app.use('/skills',   flowMiddleware('skill'),    skillsRoutes);
 app.use('/video',    flowMiddleware('video'),    videoRoutes);
 app.use('/api/video', flowMiddleware('video'),    videoRoutes);
 app.use('/api/carousel', flowMiddleware('carousel'), carouselRoutes);
+app.use('/system',   flowMiddleware('api'),      systemRoutes);
+app.use('/api/system', flowMiddleware('api'),    systemRoutes);
+app.use('/training', flowMiddleware('training'), trainingRoutes);
 app.use('/api',      flowMiddleware('api'),      apiRoutes);
 
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 const _path    = _require('path');
 app.use('/images', express.static(config.storage.output));
+app.use('/carousels', express.static(_path.join(config.storage.output, 'carousels')));
 app.use('/settings', settingsRoutes);
 app.use('/social',   socialRoutes);
 
@@ -126,8 +139,11 @@ app.use((req, res) => res.status(404).json({ error: `Route not found: ${req.meth
 
 // ── Error handler — structured logging, no internal leak ─────────────────
 app.use((err, req, res, next) => {
-  const status        = err.status ?? 500;
+  const status        = err.status ?? (err.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
   const isClientError = status >= 400 && status < 500;
+  const clientMessage = err.code === 'LIMIT_FILE_SIZE'
+    ? 'Arquivo maior que o limite permitido para esta rota. Use upload em partes quando disponivel.'
+    : err.message;
 
   // Structured error log (captured by Winston JSON in prod)
   logger.error({
@@ -138,7 +154,7 @@ app.use((err, req, res, next) => {
   });
 
   res.status(status).json({
-    error: isClientError ? err.message : 'Internal server error',
+    error: isClientError ? clientMessage : 'Internal server error',
   });
 });
 
