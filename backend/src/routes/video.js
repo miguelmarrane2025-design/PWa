@@ -30,6 +30,7 @@ import { runVideoAnalysis, getAnalysisById } from '../video/videoAnalysisService
 import { generateSupervisedEditPlan } from '../video/videoEditingSupervisor.js';
 import { renderEditPlanJob, getRenderJob, getRenderResult } from '../video/videoRenderService.js';
 import { createReferenceLearningJob, getReferenceLearningAnalysis, getReferenceLearningJob, savePresetFromReference } from '../video/referenceVideoLearningService.js';
+import { getReferenceById } from '../squads/video/edit-plans/editPlanStorage.js';
 import { listPresetLibrary } from '../video/editPresetLibraryService.js';
 import { sendClipToTelegram, sendTelegramDocument, sendTelegramMessage } from '../services/telegram/telegramSendService.js';
 import { validateMp4OrThrow, MIN_VALID_MP4_BYTES, deleteInvalidOutput } from '../services/video/videoValidationService.js';
@@ -3282,10 +3283,21 @@ function deriveStyleProfile(analysis, category = 'general') {
 
 router.post('/pro/analyze-reference', requireAuth, async (req, res) => {
   try {
-    const { videoPath, videoId, referenceName = 'Sem nome', category = 'general', saveAsPreset = false } = req.body || {};
+    const { videoPath, videoId, referenceDbId, referenceName = 'Sem nome', category = 'general', saveAsPreset = false } = req.body || {};
+
+    // Se vier referenceDbId (ID da tabela de referências do DB), resolver o path real
+    let resolvedVideoPath = videoPath;
+    let resolvedVideoId = videoId;
+    let resolvedName = referenceName;
+    if (referenceDbId) {
+      const dbRef = await getReferenceById(referenceDbId, { userId: req.user.id });
+      if (!dbRef) return res.status(404).json({ ok: false, error: `Referência ${referenceDbId} não encontrada.` });
+      resolvedVideoPath = dbRef.originalVideoPath || dbRef.filePath || resolvedVideoPath;
+      resolvedName = referenceName !== 'Sem nome' ? referenceName : (dbRef.name || resolvedName);
+    }
 
     const { sourceVideo } = await resolveProfessionalSource(
-      { sourceVideo: videoPath, videoId },
+      { sourceVideo: resolvedVideoPath, videoId: resolvedVideoId },
       req
     );
 
@@ -3299,7 +3311,7 @@ router.post('/pro/analyze-reference', requireAuth, async (req, res) => {
 
     const profileData = {
       referenceId,
-      name: referenceName,
+      name: resolvedName,
       category,
       videoPath: sourceVideo,
       recommendedPreset: styleProfile.recommendedPreset,
@@ -3333,7 +3345,7 @@ router.post('/pro/analyze-reference', requireAuth, async (req, res) => {
     res.json({
       ok: true,
       referenceId,
-      referenceName,
+      referenceName: resolvedName,
       category,
       recommendedPreset: styleProfile.recommendedPreset,
       styleProfile: profileData.styleProfile,
@@ -3426,6 +3438,58 @@ router.post('/pro/render-with-reference', requireAuth, async (req, res) => {
   } catch (err) {
     logger.error('[ProRenderWithReference] ' + err.message);
     res.status(err.status || 500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── Full Studio ────────────────────────────────────────────
+
+router.get('/full-studio/preflight', requireAuth, async (req, res) => {
+  try {
+    const presetId = String(req.query.presetId || req.query.preset || '').trim() || null;
+    const { runFullStudioPreflight } = await import('../services/video/fullStudio/fullStudioPreflight.js');
+    const result = await runFullStudioPreflight({ presetId });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    logger.error('[FullStudioPreflight] ' + err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.post('/full-studio/render', requireAuth, async (req, res) => {
+  try {
+    const {
+      sourceVideo: rawSourceVideo,
+      videoId,
+      presetId = 'podcast_studio_full_studio',
+      format = '9:16',
+      clipCount = 1,
+      targetDuration = 30,
+    } = req.body || {};
+
+    const { sourceVideo } = await resolveProfessionalSource(
+      { sourceVideo: rawSourceVideo, videoId: videoId || null },
+      req
+    );
+
+    if (!sourceVideo) {
+      return res.status(400).json({ ok: false, error: 'Informe sourceVideo ou videoId para renderização Full Studio.' });
+    }
+
+    const { runFullStudioEdit } = await import('../services/video/fullStudio/fullStudioEngine.js');
+    const result = await runFullStudioEdit({
+      sourceVideo,
+      presetId,
+      format,
+      clipCount: Number(clipCount),
+      targetDuration: Number(targetDuration),
+      userId: req.user?.userId || req.user?.id,
+    });
+
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    logger.error('[FullStudioRender] ' + err.message);
+    const isBlocked = /BLOQUEADO|BLOCKED|missing.*required/i.test(err.message);
+    res.status(isBlocked ? 422 : 500).json({ ok: false, error: err.message });
   }
 });
 

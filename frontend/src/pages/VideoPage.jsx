@@ -1192,7 +1192,16 @@ export default function VideoPage() {
   const [referenceLearningJob, setReferenceLearningJob] = useState(null);
   const [referenceTutorialAnalysis, setReferenceTutorialAnalysis] = useState(null);
   const [analyzingVideo, setAnalyzingVideo] = useState(false);
+  // Full Studio
+  const [fsPresetId, setFsPresetId] = useState('podcast_studio_full_studio');
+  const [fsPreflight, setFsPreflight] = useState(null);  // { ready, status, missingRequiredTools, blockingReasons, nextActions }
+  const [fsPreflightLoading, setFsPreflightLoading] = useState(false);
+  const [fsRenderLoading, setFsRenderLoading] = useState(false);
+  const [fsRenderResult, setFsRenderResult] = useState(null);
+  const [fsError, setFsError] = useState('');
+
   // Motor Pro — Referência
+  const [portfolioProAnalyzed, setPortfolioProAnalyzed] = useState({}); // { [refId]: { proRefId, styleProfile, loading, error } }
   const [proRefUrl, setProRefUrl] = useState('');
   const [proRefName, setProRefName] = useState('');
   const [proRefCategory, setProRefCategory] = useState('general');
@@ -1935,6 +1944,89 @@ export default function VideoPage() {
       setProRefError(err.message || 'Erro ao aplicar estilo de referência');
     } finally {
       setProRefRenderLoading(false);
+    }
+  };
+
+  const handleAnalyzePortfolioRef = async (ref) => {
+    setPortfolioProAnalyzed(prev => ({ ...prev, [ref.id]: { ...prev[ref.id], loading: true, error: '' } }));
+    try {
+      const result = await videoApi.analyzeVideoReference({
+        referenceDbId: ref.id,
+        referenceName: ref.name || 'Referência',
+        category: ref.sourceType === 'sports' ? 'sports' : 'general',
+      });
+      if (!result.ok) throw new Error(result.error || 'Falha na análise');
+      setPortfolioProAnalyzed(prev => ({
+        ...prev,
+        [ref.id]: { proRefId: result.referenceId, styleProfile: result.styleProfile, loading: false, error: '' },
+      }));
+      setProRefId(result.referenceId);
+      setProRefStyleProfile(result.styleProfile);
+      toast.success(`Estilo analisado — preset: ${result.recommendedPreset}`);
+    } catch (err) {
+      setPortfolioProAnalyzed(prev => ({ ...prev, [ref.id]: { ...prev[ref.id], loading: false, error: err.message } }));
+      toast.error('Erro ao analisar: ' + err.message);
+    }
+  };
+
+  const handleApplyPortfolioRefToMotorPro = async (ref) => {
+    const analyzed = portfolioProAnalyzed[ref.id];
+    if (!analyzed?.proRefId) return toast.error('Analise este vídeo como referência Motor Pro primeiro.');
+    if (!proSourceVideo.trim()) return toast.error('Informe ou carregue um vídeo fonte no Motor Pro antes de aplicar.');
+    setPortfolioProAnalyzed(prev => ({ ...prev, [ref.id]: { ...prev[ref.id], renderLoading: true, error: '' } }));
+    try {
+      const result = await videoApi.renderWithReference({
+        sourceVideo: proSourceVideo.trim(),
+        referenceId: analyzed.proRefId,
+        clipCount: proClipCount,
+        targetDuration: proTargetDuration,
+        format: '9:16',
+      });
+      if (!result.ok) throw new Error(result.error || 'Falha no render');
+      setPortfolioProAnalyzed(prev => ({ ...prev, [ref.id]: { ...prev[ref.id], renderLoading: false, renderResult: result } }));
+      setProRefRenderResult(result);
+      toast.success(`Motor Pro: ${result.outputs?.length || 0} clip(s) gerado(s) com estilo de "${ref.name}"`);
+    } catch (err) {
+      setPortfolioProAnalyzed(prev => ({ ...prev, [ref.id]: { ...prev[ref.id], renderLoading: false, error: err.message } }));
+      toast.error('Erro ao aplicar: ' + err.message);
+    }
+  };
+
+  const handleFullStudioPreflight = async () => {
+    setFsPreflightLoading(true);
+    setFsPreflight(null);
+    setFsError('');
+    try {
+      const result = await videoApi.getFullStudioPreflight(fsPresetId || null);
+      setFsPreflight(result);
+    } catch (err) {
+      setFsError(err.message || 'Erro ao verificar toolchain Full Studio');
+    } finally {
+      setFsPreflightLoading(false);
+    }
+  };
+
+  const handleFullStudioRender = async () => {
+    if (!proSourceVideo.trim()) return toast.error('Informe o caminho do vídeo fonte no Motor Pro');
+    setFsRenderLoading(true);
+    setFsRenderResult(null);
+    setFsError('');
+    try {
+      const result = await videoApi.runFullStudioEdit({
+        sourceVideo: proSourceVideo.trim(),
+        presetId: fsPresetId,
+        format: '9:16',
+        clipCount: proClipCount,
+        targetDuration: proTargetDuration,
+      });
+      if (!result.ok) throw new Error(result.error || 'Falha no render Full Studio');
+      setFsRenderResult(result);
+      toast.success(`Full Studio: ${result.outputs?.length || 0} clip(s) gerado(s)!`);
+    } catch (err) {
+      setFsError(err.message || 'Erro no Full Studio render');
+      toast.error('Full Studio: ' + (err.message || 'erro'));
+    } finally {
+      setFsRenderLoading(false);
     }
   };
 
@@ -3249,6 +3341,158 @@ export default function VideoPage() {
                       )}
                     </div>
 
+                    {/* ── MOTOR PRO FULL STUDIO ─────────────────────────── */}
+                    <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-3 space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <p className="text-[11px] font-bold text-cyan-300">MOTOR PRO FULL STUDIO</p>
+                        {fsPreflight && (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${fsPreflight.ready ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-red-500/20 text-red-300 border border-red-500/40'}`}>
+                            {fsPreflight.ready ? 'READY' : 'BLOQUEADO'}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-gray-500">Renderização nível After Effects / DaVinci — 10 etapas, sem fallback silencioso. Bloqueado se ferramenta obrigatória estiver ausente.</p>
+
+                      {/* Preset selector */}
+                      <div>
+                        <label className="text-[10px] text-gray-500 uppercase tracking-wider">Preset Full Studio</label>
+                        <select
+                          className="mt-1 w-full rounded-lg border border-gray-700 bg-gray-900 px-2 py-1.5 text-[11px] text-gray-200"
+                          value={fsPresetId}
+                          onChange={e => { setFsPresetId(e.target.value); setFsPreflight(null); }}
+                        >
+                          {[
+                            ['podcast_studio_full_studio',  'Podcast Studio Full Studio'],
+                            ['viral_kinetic_full_studio',   'Viral Kinetic Full Studio'],
+                            ['product_premium_full_studio', 'Product Premium Full Studio'],
+                            ['sports_broadcast_full_studio','Sports Broadcast Full Studio (req. Blender)'],
+                            ['cinematic_trailer_full_studio','Cinematic Trailer Full Studio (req. Blender)'],
+                            ['worship_atmosphere_full_studio','Worship Atmosphere Full Studio (req. Blender+Natron)'],
+                          ].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+                        </select>
+                      </div>
+
+                      {/* Preflight result */}
+                      {fsPreflight && (
+                        <div className={`rounded-xl border p-2 space-y-2 ${fsPreflight.ready ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
+                          <p className="text-[10px] font-bold text-gray-300 uppercase">Status: {fsPreflight.status || (fsPreflight.ready ? 'ready' : 'blocked')}</p>
+
+                          {/* Tool layers */}
+                          {fsPreflight.toolStatus && (
+                            <div className="grid grid-cols-3 gap-1">
+                              {Object.entries(fsPreflight.toolStatus).map(([tool, avail]) => (
+                                <div key={tool} className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${avail ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                                  {avail ? '✓' : '✗'} {tool}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Missing tools */}
+                          {fsPreflight.missingRequiredTools?.length > 0 && (
+                            <div>
+                              <p className="text-[9px] text-red-400 font-bold uppercase">Ferramentas obrigatórias ausentes:</p>
+                              <div className="flex flex-wrap gap-1 mt-0.5">
+                                {fsPreflight.missingRequiredTools.map(t => (
+                                  <span key={t} className="rounded px-1.5 py-0.5 text-[9px] bg-red-500/20 text-red-300 border border-red-500/30">{t}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Blocking reasons */}
+                          {fsPreflight.blockingReasons?.length > 0 && (
+                            <div>
+                              <p className="text-[9px] text-amber-400 font-bold uppercase">Motivos de bloqueio:</p>
+                              <ul className="mt-0.5 space-y-0.5">
+                                {fsPreflight.blockingReasons.map((r, i) => (
+                                  <li key={i} className="text-[9px] text-gray-400">• {r}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {/* Next actions */}
+                          {fsPreflight.nextActions?.length > 0 && (
+                            <div>
+                              <p className="text-[9px] text-cyan-400 font-bold uppercase">Próximas ações:</p>
+                              <ul className="mt-0.5 space-y-0.5">
+                                {fsPreflight.nextActions.map((a, i) => (
+                                  <li key={i} className="text-[9px] text-gray-400 font-mono break-all">• {a}</li>
+                                ))}
+                              </ul>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard?.writeText(fsPreflight.nextActions.filter(a => a.startsWith('apt') || a.startsWith('pip') || a.startsWith('brew') || a.startsWith('sudo') || a.startsWith('docker')).join('\n'));
+                                  toast.success('Comandos copiados!');
+                                }}
+                                className="mt-1 rounded-lg border border-cyan-500/30 px-2 py-0.5 text-[9px] text-cyan-400 hover:border-cyan-500/60"
+                              >
+                                Copiar comandos
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {fsError && (
+                        <p className="text-[10px] text-red-400 rounded-lg border border-red-500/20 bg-red-500/5 p-2">{fsError}</p>
+                      )}
+
+                      {/* Buttons */}
+                      <div className="flex gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          disabled={fsPreflightLoading}
+                          onClick={handleFullStudioPreflight}
+                          className="rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-bold text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-40"
+                        >
+                          {fsPreflightLoading ? 'Verificando...' : 'Verificar Full Studio'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={fsRenderLoading || !proSourceVideo.trim() || (fsPreflight && !fsPreflight.ready)}
+                          onClick={handleFullStudioRender}
+                          title={fsPreflight && !fsPreflight.ready ? 'Toolchain bloqueado — execute preflight para ver ferramentas faltantes' : !proSourceVideo.trim() ? 'Informe vídeo fonte no Motor Pro' : ''}
+                          className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40"
+                        >
+                          {fsRenderLoading ? 'Renderizando Full Studio...' : 'Rodar Edição Full Studio'}
+                        </button>
+                      </div>
+                      {fsPreflight && !fsPreflight.ready && (
+                        <p className="text-[10px] text-amber-400">Full Studio bloqueado. Resolva as ferramentas ausentes antes de renderizar.</p>
+                      )}
+                      {!proSourceVideo.trim() && (
+                        <p className="text-[10px] text-gray-600">Informe o vídeo fonte no campo "Caminho do vídeo" acima para habilitar o render.</p>
+                      )}
+
+                      {/* Render result */}
+                      {fsRenderResult && (
+                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-2 space-y-1">
+                          <p className="text-[10px] font-bold text-emerald-300 uppercase">Full Studio — {fsRenderResult.outputs?.length || 0} clip(s)</p>
+                          {fsRenderResult.primaryOutput && (
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-[10px] text-gray-300">{fsRenderResult.primaryOutput.fileName}</p>
+                              <span className="text-[9px] text-gray-500">{((fsRenderResult.primaryOutput.size || 0) / 1024 / 1024).toFixed(1)}MB</span>
+                              <span className="text-[9px] text-gray-500">{fsRenderResult.primaryOutput.duration?.toFixed(1)}s</span>
+                              <span className="text-[9px] text-emerald-400">{fsRenderResult.primaryOutput.videoCodec}</span>
+                            </div>
+                          )}
+                          {fsRenderResult.stages && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {Object.entries(fsRenderResult.stages).map(([stage, ok]) => (
+                                <span key={stage} className={`text-[8px] px-1 rounded ${ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                                  {ok ? '✓' : '✗'} {stage}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <p className="text-[9px] text-gray-500">jobId: {fsRenderResult.jobId}</p>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="rounded-xl border border-gray-800 bg-gray-950/70 p-3">
                       <p className="text-[11px] font-bold text-gray-200 mb-2">RELATORIO DO ULTIMO JOB</p>
                       {jobs[0] ? (
@@ -3292,6 +3536,7 @@ export default function VideoPage() {
                     <p className="text-[10px] text-gray-600 mt-1">Tipo: {ref.sourceType || 'vídeo exemplo'} • Tags: {Array.isArray(ref.tags) ? ref.tags.join(', ') : (ref.tags || '-')}</p>
                     <p className="text-[10px] text-gray-500 mt-1">{ref.description || ref.notes || 'Sem descrição'}</p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
+                      {/* ── botões originais SmartCut (não remover) ── */}
                       <button
                         type="button"
                         onClick={() => {
@@ -3313,6 +3558,34 @@ export default function VideoPage() {
                       >
                         Comparar com vídeo atual
                       </button>
+                      {/* ── botões novos Motor Pro ── */}
+                      <button
+                        type="button"
+                        disabled={portfolioProAnalyzed[ref.id]?.loading}
+                        onClick={() => handleAnalyzePortfolioRef(ref)}
+                        className="rounded-lg border border-violet-500/40 px-2 py-1 text-[10px] font-semibold text-violet-300 hover:border-violet-500/70 disabled:opacity-40"
+                      >
+                        {portfolioProAnalyzed[ref.id]?.loading ? 'Analisando...' : portfolioProAnalyzed[ref.id]?.proRefId ? '✓ Analisado (repetir)' : 'Analisar como ref. Motor Pro'}
+                      </button>
+                      {portfolioProAnalyzed[ref.id]?.proRefId && (
+                        <button
+                          type="button"
+                          disabled={portfolioProAnalyzed[ref.id]?.renderLoading || !proSourceVideo.trim()}
+                          onClick={() => handleApplyPortfolioRefToMotorPro(ref)}
+                          title={!proSourceVideo.trim() ? 'Carregue um vídeo fonte no Motor Pro primeiro' : ''}
+                          className="rounded-lg border border-emerald-500/40 px-2 py-1 text-[10px] font-semibold text-emerald-300 hover:border-emerald-500/70 disabled:opacity-40"
+                        >
+                          {portfolioProAnalyzed[ref.id]?.renderLoading ? 'Renderizando...' : 'Aplicar no Motor Pro'}
+                        </button>
+                      )}
+                      {portfolioProAnalyzed[ref.id]?.error && (
+                        <p className="w-full text-[10px] text-red-400 mt-0.5">{portfolioProAnalyzed[ref.id].error}</p>
+                      )}
+                      {portfolioProAnalyzed[ref.id]?.renderResult?.primaryOutput && (
+                        <p className="w-full text-[10px] text-emerald-400 mt-0.5">
+                          Clip gerado: {portfolioProAnalyzed[ref.id].renderResult.primaryOutput.fileName} — {portfolioProAnalyzed[ref.id].renderResult.primaryOutput.duration}s
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}

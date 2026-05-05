@@ -1137,6 +1137,61 @@ const SKILLS_REGISTRY = {
     tasks: ['apply_reference', 'apply_style', 'aplicar_referencia', 'aplicar_estilo', 'render_with_reference'],
     tools: ['memory', 'ffmpeg'],
     executor: 'video-apply-reference-style-skill'
+  },
+
+  // ── Full Studio skills ───────────────────────────────────────────────────
+  'video_full_studio_preflight': {
+    nome: 'VideoFullStudioPreflight',
+    descricao: 'Verifica se o toolchain Full Studio está disponível para um preset. Retorna status READY/BLOCKED, ferramentas faltantes e nextActions de instalação.',
+    dominios: ['video'],
+    tasks: ['full_studio_preflight', 'preflight_full_studio', 'verificar_full_studio', 'checar_ferramentas_full_studio'],
+    tools: ['ffmpeg', 'ffprobe'],
+    executor: 'video-full-studio-preflight-skill'
+  },
+
+  'video_full_studio_edit': {
+    nome: 'VideoFullStudioEdit',
+    descricao: 'Renderização Full Studio completa (10 etapas): análise Pro → score → edit plan → composição → color grade → áudio mix → validação. SEM fallback silencioso.',
+    dominios: ['video'],
+    tasks: ['full_studio_edit', 'renderizar_full_studio', 'editar_full_studio', 'modo_full_studio', 'nivel_after_effects', 'nivel_davinci'],
+    tools: ['ffmpeg', 'ffprobe', 'opencv', 'imagemagick', 'sox'],
+    executor: 'video-full-studio-edit-skill'
+  },
+
+  'video_full_studio_colorist': {
+    nome: 'VideoFullStudioColorist',
+    descricao: 'Color grading profissional via proColorGradeService: 10 perfis de cor, LUT cube, filtros FFmpeg avançados.',
+    dominios: ['video'],
+    tasks: ['color_grade', 'color_grading', 'color_grading_pro', 'grade_color', 'aplicar_cor_pro', 'lut_cube'],
+    tools: ['ffmpeg'],
+    executor: 'video-full-studio-colorist-skill'
+  },
+
+  'video_full_studio_audio_finisher': {
+    nome: 'VideoFullStudioAudioFinisher',
+    descricao: 'Finalização de áudio profissional: Sox normalize, CamillaDSP, 6 modos de mix de áudio para vídeo.',
+    dominios: ['video', 'audio'],
+    tasks: ['audio_finisher', 'audio_mix_pro', 'finalizar_audio_video', 'mix_audio_pro', 'sox_normalize'],
+    tools: ['ffmpeg', 'sox'],
+    executor: 'video-full-studio-audio-finisher-skill'
+  },
+
+  'video_composition_engine': {
+    nome: 'VideoCompositionEngine',
+    descricao: 'Motor de composição multi-camada: Remotion → Natron → Blender → FFmpeg drawtext. Overlays, títulos e motion graphics.',
+    dominios: ['video'],
+    tasks: ['composition', 'motion_graphics', 'composicao', 'overlays_pro', 'remotion_render', 'motion_graphics_designer'],
+    tools: ['ffmpeg', 'remotion'],
+    executor: 'video-composition-engine-skill'
+  },
+
+  'video_full_professional_edit': {
+    nome: 'VideoFullProfessionalEdit',
+    descricao: 'Edição profissional completa integrando Motor Pro + color grade + áudio mix + composição. Pipeline unificado nível DaVinci.',
+    dominios: ['video'],
+    tasks: ['full_professional_edit', 'edicao_profissional_completa', 'davinci_style', 'after_effects_style', 'pipeline_completo'],
+    tools: ['ffmpeg', 'ffprobe', 'imagemagick', 'sox'],
+    executor: 'video-full-professional-edit-skill'
   }
 };
 

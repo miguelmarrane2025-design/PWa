@@ -17,6 +17,39 @@ import {
   wantsHtmlSvgFallback,
 } from '../services/carousel-service.js';
 
+const AGENT_PREFIX_RE = /^\[agent:([\w./-]+)\]\s*/i;
+const AGENT_ALIASES = {
+  auto: null,
+  strategy: 'growth',
+  analytics: 'growth',
+  'audio/ir': 'audio',
+  'audio-ir': 'audio',
+  'audio_gear': 'audio',
+  'audio-gear': 'audio',
+  deepresearch: 'deep_research_squad',
+  'deep-research': 'deep_research_squad',
+  'channel-niche-research': 'channel_niche_research_squad',
+  'video-cutting-squad': 'video_cutting_squad',
+  'creative-review-squad': 'creative_review_squad',
+  'traffic-scale-squad': 'traffic_scale_squad',
+  // Motor Profissional aliases
+  'motor-pro': 'sports_highlight_pro_agent',
+  'motor-profissional': 'sports_highlight_pro_agent',
+  // Full Studio aliases
+  'full-studio': 'video_full_studio_edit',
+  'full_studio': 'video_full_studio_edit',
+  'fullstudio': 'video_full_studio_edit',
+  'after-effects': 'video_full_studio_edit',
+  'davinci': 'video_full_studio_edit',
+  'studio-preflight': 'video_full_studio_preflight',
+  'sports-highlight': 'sports_highlight_pro_agent',
+  'sports-pro': 'sports_highlight_pro_agent',
+  'podcast-cut': 'podcast_cut_agent',
+  'worship-cut': 'worship_music_cut_agent',
+  'viral-shorts': 'viral_shorts_editor_agent',
+  'video-pro': 'video_pro_analyze',
+};
+
 // Direct agent dispatch when user forces an agent
 const FORCED_AGENTS = {
   audio:   async (args) => { const { audioAgent }   = await import('./audioAgent.js');   const r = await audioAgent(args);   return { content: r.content, agent: 'audio',    metadata: { agent: 'audio',   imageUrl: r.imageUrl } }; },
@@ -154,6 +187,37 @@ export const DOMAIN_TASK_TO_SKILL = {
   'video/remove_silence':   'video_cutting_squad',
   'video/create_reels':     'video_cutting_squad',
   'video/social_metadata':  'social_metadata_agent',
+  // Motor Profissional tasks
+  'video/analyze_video':          'video_pro_analyze',
+  'video/pro_analyze':            'video_pro_analyze',
+  'video/analisa_video':          'video_pro_analyze',
+  'video/detect_highlights':      'video_highlight_detector',
+  'video/melhores_momentos':      'video_highlight_detector',
+  'video/sports_highlights':      'sports_highlight_pro_agent',
+  'video/esportes_highlights':    'sports_highlight_pro_agent',
+  'video/podcast_cut':            'podcast_cut_agent',
+  'video/fala_corte':             'podcast_cut_agent',
+  'video/worship_cut':            'worship_music_cut_agent',
+  'video/musica_corte':           'worship_music_cut_agent',
+  'video/viral_shorts':           'viral_shorts_editor_agent',
+  'video/cortes_virais':          'viral_shorts_editor_agent',
+  'video/render_video':           'video_dynamic_renderer',
+  'video/pro_render':             'video_dynamic_renderer',
+  'video/build_edit_plan':        'video_edit_plan_builder',
+  'video/validate_output':        'video_output_validator',
+  'video/check_tools':            'video_pro_toolchain_status',
+  'video/pipeline_status':        'video_pro_toolchain_status',
+  // Full Studio task routing
+  'video/full_studio_edit':       'video_full_studio_edit',
+  'video/full_studio_preflight':  'video_full_studio_preflight',
+  'video/color_grade':            'video_full_studio_colorist',
+  'video/audio_mix_pro':          'video_full_studio_audio_finisher',
+  'video/composition':            'video_composition_engine',
+  'video/motion_graphics':        'video_composition_engine',
+  'video/full_professional_edit': 'video_full_professional_edit',
+  'sports/melhores_lances':       'sports_highlight_pro_agent',
+  'sports/gols':                  'sports_highlight_pro_agent',
+  'sports/find_highlights':       'sports_highlight_pro_agent',
   'product/create_product':  'infoproduct_builder',
   'product/validate_product':'product_validator',
   'product/build_offer':     'offer_builder',
@@ -192,12 +256,12 @@ export const DOMAIN_TASK_TO_SKILL = {
 
 export async function orchestrate({ userId, message, context = [], files = [] }) {
   // Strip and resolve [agent:xxx] prefix if present
-  const hintMatch = message?.match(/^\[agent:(\w+)\]\s*/);
+  const hintMatch = message?.match(AGENT_PREFIX_RE);
   let cleanMessage = message;
   let forcedAgent  = null;
 
   if (hintMatch) {
-    forcedAgent  = hintMatch[1].toLowerCase();
+    forcedAgent  = _normalizeForcedAgent(hintMatch[1]);
     cleanMessage = message.slice(hintMatch[0].length);
     logger.info(`[Orchestrator] Forced agent: ${forcedAgent}`);
   }
@@ -219,6 +283,36 @@ export async function orchestrate({ userId, message, context = [], files = [] })
 
   // Auto-route: se a mensagem contém @perfil ou URL de rede social, vai direto ao researchAgent
   // Matches @handle (preceded by space/start, not part of an email) or social media URLs
+
+  // ── Motor Profissional auto-routing (priority over generic video) ──────────
+  const VIDEO_PRO_KEYWORDS = /\b(cortes?\s+esportivos?|highlights?\s+esportivos?|sports?\s+highlight|motor\s+profissional|motor\s+pro|faz\s+cortes?\s+de\s+futebol|melhores?\s+(momentos?|lances?)(\s+esportivos?)?|gols?\s+e\s+lances?|edic[aã]o\s+esportiva|podcast\s+cut|cortes?\s+de\s+podcast|cortes?\s+podcast|corta\s+podcast|fala\s+e\s+corte|worship\s+(cut|music|clean)|cortes?\s+(de\s+)?worship|cortes?\s+(de\s+)?m[uú]sica|louvor\s+corte|viral\s+shorts?|cortes?\s+virais?|shorts?\s+(virais?|agressivo)|analisa\s+(o\s+)?v[íi]deo\s+pro|pro\s+anali[sz]|renderiza\s+(em\s+)?(9:16|16:9)|usa\s+(o\s+)?motor|pipeline\s+pro|faz\s+\d+\s+cortes?|full\s+studio|modo\s+full\s+studio|n[íi]vel\s+(after\s+effects?|davinci|profissional\s+completo)|edic[aã]o\s+profissional\s+completa|after\s+effects?\s+style|davinci\s+style|pipeline\s+completo|preflight\s+full\s+studio|verificar\s+full\s+studio)\b/i;
+  if (!forcedAgent && VIDEO_PRO_KEYWORDS.test(cleanMessage)) {
+    const msg = cleanMessage.toLowerCase();
+    let proSkillId = 'video_pro_analyze';
+    if (/full\s+studio|modo\s+full\s+studio|n[íi]vel\s+(after|davinci)|edic[aã]o\s+profissional\s+completa|after\s+effects?\s+style|davinci\s+style|pipeline\s+completo/.test(msg)) proSkillId = 'video_full_studio_edit';
+    else if (/preflight\s+full\s+studio|verificar\s+full\s+studio/.test(msg)) proSkillId = 'video_full_studio_preflight';
+    else if (/sports?\s+highlight|cortes?\s+esportivos?|melhores?\s+lances?|gols?|futebol|esport/.test(msg)) proSkillId = 'sports_highlight_pro_agent';
+    else if (/podcast|fala\s+e\s+corte|cortes?\s+de\s+podcast|corta\s+podcast/.test(msg)) proSkillId = 'podcast_cut_agent';
+    else if (/worship|louvor|m[uú]sica\s+corte|cortes?\s+de\s+m[uú]sica/.test(msg)) proSkillId = 'worship_music_cut_agent';
+    else if (/viral\s+shorts?|cortes?\s+virais?|shorts?\s+agressivo/.test(msg)) proSkillId = 'viral_shorts_editor_agent';
+    else if (/renderiza|render/.test(msg)) proSkillId = 'video_dynamic_renderer';
+    else if (/\bmotor\s+pro\b|pipeline\s+pro/.test(msg)) proSkillId = 'video_pro_toolchain_status';
+    else if (/melhores?\s+momentos?|\d+\s+cortes?/.test(msg)) proSkillId = 'sports_highlight_pro_agent';
+
+    try {
+      const sess = _buildSessao(cleanMessage, context, files);
+      const ctxPro = await contextManager.enriquecer(userId, sess).catch(() => ({ userId, sessao: sess, outputs: [] }));
+      ctxPro.userId = userId; ctxPro.memoryMCP = memoryMCP;
+      const r = await skillManager.executar(proSkillId, ctxPro, { message: cleanMessage });
+      if (r?.outputs?.[0]?.conteudo) {
+        logger.info(`[Orchestrator] Auto-routed Motor Pro → ${proSkillId}`);
+        return { content: r.outputs[0].conteudo, agent: proSkillId, metadata: { agent: proSkillId, ...r.data } };
+      }
+    } catch (err) {
+      logger.warn(`[Orchestrator] Motor Pro auto-route failed: ${err.message}`);
+    }
+  }
+
   // Auto-route to videoAgent when video files are present or video keywords detected
   const VIDEO_KEYWORDS = /\b(edit(ar|a|e)?\s+(v[íi]deo|video)|cortar?\s+v[íi]deo|legenda[rs]?|remov[ea]r?\s+(sil[eê]ncio|pausa)|melhores?\s+momentos?|reels?|tiktok|shorts?\s+form|videomaker|video\s+maker)\b/i;
   const hasVideoFiles = (files ?? []).some(f => /\.(mp4|mov|avi|mkv|webm|m4v|3gp)$/i.test(f.originalname ?? ''));
@@ -319,6 +413,12 @@ export async function orchestrate({ userId, message, context = [], files = [] })
       logger.warn(`[Orchestrator] Forced agent ${forcedAgent} failed: ${err.message}`);
     }
     return _llmFallback(cleanMessage, context, userId);
+  }
+
+  // Dynamic forced route: allows real skill/squad IDs from /system/agents.
+  if (forcedAgent) {
+    const routed = await _executeForcedSkillRoute(forcedAgent, args);
+    if (routed?.content) return routed;
   }
 
   logger.info(`[Orchestrator] user=${userId} msg="${cleanMessage?.slice(0, 80)}"`);
@@ -473,6 +573,82 @@ function _buildSessao(message, context, files) {
   const kw = ws => (Array.isArray(ws) ? ws : [ws]).find(w => recentText.includes(w)) ?? null;
   const nichoMatch = recentText.match(/nicho[:\s]+([a-zA-Záàéêíóôúç\s]{3,30})/i);
   return { ultimoTexto: message, ultimoIR: audioFiles[0]?.path ?? null, ultimaFoto: imageFiles[0]?.path ?? null, ultimoAudio: audioFiles[0]?.path ?? null, nicho: nichoMatch?.[1]?.trim() ?? null, estilo: kw(['worship','gospel','ambient','rock','lead','rhythm']) ?? null, ajustesTonais: [], contexto: kw(['igreja','studio','ao vivo','live','gravação']) ?? null, produto: null, amp: null, ultimaTema: null, pedaleira: kw(['hx_stomp','helix','quad_cortex','kemper','fractal','tonemaster']) ?? null, guitarra: kw(['strato','telecaster','les paul','sg','ibanez','pacifica']) ?? null };
+}
+
+function _normalizeForcedAgent(raw = '') {
+  const base = String(raw || '').trim().toLowerCase();
+  if (!base) return null;
+  if (Object.prototype.hasOwnProperty.call(AGENT_ALIASES, base)) {
+    return AGENT_ALIASES[base];
+  }
+  return base.replace(/\s+/g, '-');
+}
+
+function _extractContentFromSkillResult(result) {
+  if (!result) return null;
+  if (typeof result === 'string') return result.trim() || null;
+  if (typeof result.content === 'string' && result.content.trim()) return result.content.trim();
+  if (typeof result.output === 'string' && result.output.trim()) return result.output.trim();
+  if (Array.isArray(result.outputs)) {
+    const content = result.outputs
+      .filter(item => item?.tipo === 'texto' && typeof item?.conteudo === 'string')
+      .map(item => item.conteudo.trim())
+      .filter(Boolean)
+      .join('\n\n');
+    if (content) return content;
+  }
+  return null;
+}
+
+function _forcedSkillCandidates(forcedAgent) {
+  const base = String(forcedAgent || '').trim();
+  if (!base) return [];
+  const variants = new Set([
+    base,
+    base.replace(/-/g, '_'),
+    base.replace(/_/g, '-'),
+    base.replace(/[./]+/g, '_'),
+    base.replace(/[./]+/g, '-'),
+  ]);
+  return [...variants];
+}
+
+async function _executeForcedSkillRoute(forcedAgent, args) {
+  const candidates = _forcedSkillCandidates(forcedAgent);
+  if (candidates.length === 0) return null;
+
+  const skillList = skillManager.listarSkills({});
+  const skill = skillList.find(item => candidates.includes(item.id));
+  if (!skill?.id) return null;
+
+  logger.info(`[Orchestrator] Forced dynamic skill route: ${forcedAgent} -> ${skill.id}`);
+
+  const sessao = _buildSessao(args.message, args.context || [], args.files || []);
+  const ctx = await contextManager.enriquecer(args.userId, sessao).catch(() => ({
+    userId: args.userId,
+    sessao,
+    outputs: [],
+  }));
+  ctx.memoryMCP = memoryMCP;
+  ctx.userId = args.userId;
+
+  const result = await skillManager.executar(skill.id, ctx, {
+    acao: 'forced_agent',
+    forcedAgentId: forcedAgent,
+    texto: args.message,
+  }).catch(err => {
+    logger.warn(`[Orchestrator] Forced dynamic skill failed (${skill.id}): ${err.message}`);
+    return null;
+  });
+
+  const content = _extractContentFromSkillResult(result);
+  if (!content) return null;
+
+  return {
+    content,
+    agent: skill.id,
+    metadata: { agent: skill.id, route: 'forced_skill', forcedAgent },
+  };
 }
 
 async function _llmFallback(message, context = [], userId = null) {

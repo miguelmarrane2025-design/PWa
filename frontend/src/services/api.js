@@ -258,6 +258,10 @@ export const videoApi = {
   analyzeVideoReference: data => api.post('/video/pro/analyze-reference', data, { timeout: 10 * 60 * 1000 }),
   renderWithReference: data => api.post('/video/pro/render-with-reference', data, { timeout: 15 * 60 * 1000 }),
 
+  // Full Studio
+  getFullStudioPreflight: (presetId = null) => api.get('/video/full-studio/preflight', { params: presetId ? { presetId } : {}, timeout: 30 * 1000 }),
+  runFullStudioEdit: data => api.post('/video/full-studio/render', data, { timeout: 20 * 60 * 1000 }),
+
   health: () => api.get('/video/health'),
 };
 
