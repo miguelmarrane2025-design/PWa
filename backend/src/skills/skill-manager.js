@@ -5,11 +5,12 @@
 // buscar na web e executar tarefas complexas.
 
 import { log } from '../core/logger.js';
-import { openaiFast, openaiStrong } from '../integrations/openai-advanced.js';
+import { openaiStrong } from '../integrations/openai-advanced.js';
 import { webSearch } from '../mcps/web-search.js';
 import { webScraper } from '../mcps/web-scraper.js';
 import { memoryMCP } from '../mcps/memory-mcp.js';
 import { decisionEngine } from '../core/decision-engine.js';
+import { modelRouter } from '../ai/modelRouter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // REGISTRO COMPLETO DE SKILLS (37 skills)
@@ -350,279 +351,792 @@ const SKILLS_REGISTRY = {
     executor: 'risk-guard-skill'
   },
 
-  // ── v26/v27: Conteúdo, visual e squads ──────────────────────────────────
+  // ── NOVOS AGENTES E SKILLS ───────────────────────────────────────────────
 
+  // v27: ImagePromptDirector — gera prompts antes de qualquer imagem
   'carousel_image_prompt_director': {
     nome: 'CarouselImagePromptDirector',
-    descricao: 'Diretor de arte: gera pacote de prompts de imagem realistas para carrosséis. Não gera imagens.',
+    descricao: 'Diretor de arte: gera pacote de prompts de imagem realistas para carrosséis. NÃO gera imagens — entrega prompts para uso externo.',
     dominios: ['visual', 'content'],
     tasks: ['create_carousel', 'create_prompt_pack', 'create_creative', 'create_prompt'],
     tools: ['memory'],
     executor: 'carousel-image-prompt-director',
     modelTier: 'mini',
     qualityTier: 'strong',
-    requiresApprovalBeforeRender: true
+    requiresApprovalBeforeRender: true,
   },
+
+  // ── v27: NOVOS SQUADS REAIS ──────────────────────────────────────────────
 
   'copy_squad': {
     nome: 'CopySquad',
-    descricao: 'Squad de copy com criação, revisão e refinamento.',
+    descricao: 'Squad completo de copy: CopyChief + Copywriter + CopyReview + CopyRefiner. Score mínimo 85.',
     dominios: ['content', 'copy'],
     tasks: ['create_copy', 'create_hook', 'create_headline', 'create_ad'],
     tools: ['memory'],
     executor: 'copy-squad-skill',
-    modelTier: 'strong'
+    modelTier: 'strong',
   },
 
   'infoproduct_squad': {
     nome: 'InfoproductSquad',
-    descricao: 'Squad de infoprodutos com estratégia, outline e revisão.',
-    dominios: ['content', 'product'],
+    descricao: 'Squad de infoprodutos: Estrategista + Outline + Review. Score mínimo 85.',
+    dominios: ['content'],
     tasks: ['create_product', 'create_ebook', 'create_course'],
     tools: ['memory'],
     executor: 'infoproduct-squad-skill',
-    modelTier: 'strong'
+    modelTier: 'strong',
   },
 
   'audio_gear_squad': {
     nome: 'AudioGearSquad',
-    descricao: 'Pedaleiras, presets e compatibilidade de timbre.',
-    dominios: ['audio', 'gear', 'pedal'],
-    tasks: ['create_preset', 'read_pedal', 'analyze_gear', 'create_tone'],
+    descricao: 'Pedaleiras e presets: GearRecognition + PresetDesigner + DeviceCompat + ToneReview.',
+    dominios: ['audio', 'gear'],
+    tasks: ['create_preset', 'read_pedal', 'analyze_gear', 'create_tone', 'create_ir', 'review_tone', 'compare_ir', 'tone_match', 'analyze_audio', 'analyze_guitar', 'process_ir', 'worship_tone', 'gear_preset', 'mix_ready', 'analyze_pedalboard'],
     tools: ['memory'],
     executor: 'audio-gear-squad-skill',
-    modelTier: 'strong'
-  },
-
-  'gear_vision': {
-    nome: 'GearVision',
-    descricao: 'Reconhece gear em imagem e aciona o fluxo de preset compatível.',
-    dominios: ['audio', 'gear', 'pedal'],
-    tasks: ['recognize_gear_image', 'read_pedal_image', 'analyze_pedal_settings', 'create_preset_from_image', 'recreate_tone_from_screenshot'],
-    tools: ['memory'],
-    executor: 'gear-vision-skill',
-    modelTier: 'strong'
+    modelTier: 'strong',
   },
 
   'thumbnail_squad': {
     nome: 'ThumbnailSquad',
-    descricao: 'Thumbnails profissionais com estratégia, prompt e revisão.',
+    descricao: 'Thumbnails profissionais: Strategist + PromptDirector + Review. Score mínimo 85.',
     dominios: ['visual'],
     tasks: ['create_thumb', 'optimize_thumbnail'],
     tools: ['memory'],
     executor: 'thumbnail-squad-skill',
-    modelTier: 'strong'
+    modelTier: 'strong',
   },
 
+  'carousel_generator': {
+    nome: 'CarouselGenerator',
+    descricao: 'Gera carrosséis completos com copy slide por slide e prompts de imagem',
+    dominios: ['visual', 'content'],
+    tasks: ['create_carousel', 'create_creative'],
+    tools: ['memory'],
+    executor: 'carousel-generator'
+  },
+  'prompt_image_generator': {
+    nome: 'PromptImageGenerator',
+    descricao: 'Gera prompts detalhados de imagem para ChatGPT, Midjourney ou DALL-E',
+    dominios: ['visual'],
+    tasks: ['create_creative', 'create_thumb'],
+    tools: ['memory'],
+    executor: 'prompt-image-generator'
+  },
+  'script_writer': {
+    nome: 'ScriptWriter',
+    descricao: 'Roteirista especializado em Shorts, Reels, TikTok e YouTube com timecodes',
+    dominios: ['content', 'video'],
+    tasks: ['create_copy', 'create_traffic'],
+    tools: ['memory', 'web_search'],
+    executor: 'script-writer-skill'
+  },
+  'email_sequence': {
+    nome: 'EmailSequence',
+    descricao: 'Cria sequências de email para lançamento, nurturing e reengajamento',
+    dominios: ['content', 'product'],
+    tasks: ['create_copy', 'create_funnel'],
+    tools: ['memory'],
+    executor: 'email-sequence-skill'
+  },
+  'bio_optimizer': {
+    nome: 'BioOptimizer',
+    descricao: 'Otimiza bios de perfis sociais para conversão, autoridade e descoberta',
+    dominios: ['content', 'research'],
+    tasks: ['create_copy', 'analyze_profile'],
+    tools: ['memory'],
+    executor: 'bio-optimizer-skill'
+  },
+  // ── v27: Skills de vídeo pipeline ────────────────────────────────────────
   'video_clip_director': {
     nome: 'VideoClipDirector',
-    descricao: 'Direciona estratégia de cortes e melhores momentos para o pipeline de vídeo.',
+    descricao: 'Direciona estratégia de cortes, avalia momentos e gera clips virais via pipeline FFmpeg',
     dominios: ['video'],
     tasks: ['create_clips', 'edit_short', 'edit_long', 'create_reels'],
     tools: ['memory', 'ffmpeg'],
     executor: 'video-clip-director'
   },
-
-  'video_cutting_squad': {
-    nome: 'VideoCuttingSquad',
-    descricao: 'Planeja cortes, melhores momentos e coordena o pipeline principal de video.',
-    dominios: ['video'],
-    tasks: ['create_clips', 'find_hot_moments', 'render_shorts', 'review_clip', 'finalize_clips'],
-    tools: ['memory', 'ffmpeg'],
-    executor: 'video-cutting-squad-skill',
-    modelTier: 'strong'
-  },
-
-  'carousel_assembler': {
-    nome: 'CarouselAssembler',
-    descricao: 'Finaliza o carrossel quando as imagens do prompt pack forem enviadas.',
-    dominios: ['visual', 'content'],
-    tasks: ['finalize_carousel'],
-    tools: ['memory'],
-    executor: 'carousel-assembler-skill'
-  },
-
   'caption_style_agent': {
     nome: 'CaptionStyleAgent',
-    descricao: 'Sugere/aplica estilos de legenda para cortes de vídeo.',
+    descricao: 'Aplica estilos de legenda nos cortes de vídeo (classic, fire, neon, gospel, contrast)',
     dominios: ['video'],
     tasks: ['add_captions'],
     tools: ['memory'],
     executor: 'caption-style-agent'
   },
-
   'social_metadata_agent': {
     nome: 'SocialMetadataAgent',
-    descricao: 'Gera título, descrição, hashtags e CTA por plataforma social.',
+    descricao: 'Gera título, descrição, hashtags e CTA otimizados para cada plataforma social',
     dominios: ['video', 'content'],
     tasks: ['social_metadata', 'create_script'],
     tools: ['memory'],
     executor: 'social-metadata-agent'
   },
-
   'quality_review': {
     nome: 'QualityReviewAgent',
-    descricao: 'Revisor geral com score 0-100 e notas de melhoria.',
+    descricao: 'Revisor geral — avalia qualquer output e retorna score 0-100 com notas de melhoria',
     dominios: ['content', 'visual', 'video', 'audio'],
     tasks: ['review', 'quality_check'],
     tools: ['memory'],
     executor: 'quality-review-agent'
   },
 
-  'profile_investigator': {
-    nome: 'ProfileInvestigator',
-    descricao: 'Investiga perfis e sinais de crescimento com foco prático.',
-    dominios: ['growth', 'research', 'hunter'],
-    tasks: ['analyze_profile'],
-    tools: ['memory', 'web_search'],
-    executor: 'profile-investigator-skill'
-  },
+  // ── AGENCY OS — SQUADS E REVIEWERS (v28) ─────────────────────────────────
 
-  'content_pattern_analyst': {
-    nome: 'ContentPatternAnalyst',
-    descricao: 'Analisa padrões de conteúdo e retenção por nicho e plataforma.',
-    dominios: ['growth', 'research'],
-    tasks: ['analyze_content_patterns'],
-    tools: ['memory', 'web_search'],
-    executor: 'content-pattern-analyst-skill'
-  },
-
-  'hook_research': {
-    nome: 'HookResearch',
-    descricao: 'Pesquisa hooks fortes e ângulos de abertura por nicho e plataforma.',
-    dominios: ['growth', 'content', 'research'],
-    tasks: ['find_hooks'],
-    tools: ['memory', 'web_search'],
-    executor: 'hook-research-skill'
-  },
-
-  'competitor_gap': {
-    nome: 'CompetitorGap',
-    descricao: 'Mapeia gaps competitivos e oportunidades de conteúdo.',
-    dominios: ['growth', 'research'],
-    tasks: ['analyze_competitor'],
-    tools: ['memory', 'web_search'],
-    executor: 'competitor-gap-skill'
-  },
-
-  'growth_strategy': {
-    nome: 'GrowthStrategy',
-    descricao: 'Cria estratégia de crescimento de canal e plano de ação.',
-    dominios: ['growth', 'research'],
-    tasks: ['create_strategy'],
-    tools: ['memory', 'web_search'],
-    executor: 'growth-strategy-skill'
-  },
-
-  'channel_niche_research_squad': {
-    nome: 'ChannelNicheResearchSquad',
-    descricao: 'Pesquisa nichos especificos para canais, plataformas, formatos e monetizacao.',
-    dominios: ['channel', 'growth', 'niche', 'research'],
-    tasks: ['find_niches', 'research_niche', 'analyze_niche', 'dark_niche_research', 'platform_fit', 'monetization_paths', 'competitor_map', 'find_channel_niches', 'channel_opportunities'],
-    tools: ['memory', 'web_search'],
-    executor: 'channel-niche-research-squad-skill',
-    modelTier: 'strong'
-  },
-
-  'creative_review_squad': {
-    nome: 'CreativeReviewSquad',
-    descricao: 'Faz review de criativos e packs visuais antes de publicar.',
-    dominios: ['content', 'visual', 'review'],
-    tasks: ['review_creative', 'creative_review'],
+  'agency_command_squad': {
+    nome: 'AgencyCommandSquad',
+    descricao: 'COO operacional: briefing → Work Order → roteamento de squads → quality gate → entrega',
+    dominios: ['agency'],
+    tasks: ['create_work_order', 'route_task', 'status', 'final_review', 'delivery_report'],
     tools: ['memory'],
-    executor: 'creative-review-squad-skill',
-    modelTier: 'strong'
+    executor: 'agency-command-squad-skill'
   },
 
-  'dark_channel_squad': {
-    nome: 'DarkChannelSquad',
-    descricao: 'Cria canais dark com posicionamento, formatos e plano de execucao.',
-    dominios: ['content', 'growth', 'channel'],
-    tasks: ['create_dark_channel', 'launch_dark_channel'],
-    tools: ['memory', 'web_search'],
-    executor: 'dark-channel-squad-skill',
-    modelTier: 'strong'
+  'social_growth_squad': {
+    nome: 'SocialGrowthSquad',
+    descricao: 'Crescimento orgânico YouTube/TikTok/Instagram: estratégia, calendário, hooks, experimentos',
+    dominios: ['growth', 'social'],
+    tasks: ['analyze_profile', 'find_ideas', 'create_calendar', 'analyze_metrics', 'plan_experiment', 'create_strategy'],
+    tools: ['web_search', 'memory'],
+    executor: 'social-growth-squad-skill'
   },
 
   'marketing_strategy_squad': {
     nome: 'MarketingStrategySquad',
-    descricao: 'Estrategia de marketing, campanhas e posicionamento.',
-    dominios: ['marketing', 'growth'],
-    tasks: ['create_marketing_strategy'],
-    tools: ['memory', 'web_search'],
-    executor: 'marketing-strategy-squad-skill',
-    modelTier: 'strong'
+    descricao: 'Oferta, posicionamento, funil, copy e monetização',
+    dominios: ['marketing', 'content'],
+    tasks: ['create_strategy', 'create_offer', 'create_funnel', 'create_campaign', 'create_sales_copy'],
+    tools: ['web_search', 'memory'],
+    executor: 'marketing-strategy-squad-skill'
   },
 
   'traffic_scale_squad': {
     nome: 'TrafficScaleSquad',
-    descricao: 'Planeja escala de trafego e criativos de performance.',
-    dominios: ['traffic', 'growth', 'marketing'],
-    tasks: ['scale_traffic'],
-    tools: ['memory', 'web_search'],
-    executor: 'traffic-scale-squad-skill',
-    modelTier: 'strong'
+    descricao: 'Escala com tráfego orgânico e pago: campanha, criativos, orçamento, métricas',
+    dominios: ['traffic'],
+    tasks: ['create_plan', 'paid_plan', 'organic_scale', 'analyze_campaign', 'create_creative_tests'],
+    tools: ['web_search', 'memory'],
+    executor: 'traffic-scale-squad-skill'
+  },
+
+  'dark_channel_squad': {
+    nome: 'DarkChannelSquad',
+    descricao: 'Criação e crescimento de canais dark/faceless: nicho, estratégia, roteiro, visual, metadata',
+    dominios: ['dark'],
+    tasks: ['create_channel_strategy', 'find_niche', 'create_ideas', 'create_script', 'create_video_package', 'review_content'],
+    tools: ['web_search', 'memory'],
+    executor: 'dark-channel-squad-skill'
+  },
+
+  'video_cutting_squad': {
+    nome: 'VideoCuttingSquad',
+    descricao: 'Cortes de vídeo estilo OpusClip: melhores momentos, shorts verticais, legendas, downloads',
+    dominios: ['video'],
+    tasks: ['create_clips', 'find_hot_moments', 'render_shorts', 'review_clip', 'finalize_clips'],
+    tools: ['memory'],
+    executor: 'video-cutting-squad-skill'
   },
 
   'niche_visionary_squad': {
     nome: 'NicheVisionarySquad',
-    descricao: 'Explora oportunidades amplas de mercado, blue ocean e produto.',
-    dominios: ['niche', 'research'],
-    tasks: ['visionary_niche_research'],
-    tools: ['memory', 'web_search'],
-    executor: 'niche-visionary-squad-skill',
-    modelTier: 'strong'
+    descricao: 'Nichos, subnichos, blue ocean, oportunidades de produto digital e canal dark',
+    dominios: ['niche'],
+    tasks: ['find_opportunity', 'analyze', 'blue_ocean', 'product_opportunities', 'dark_channel_opportunities'],
+    tools: ['web_search', 'memory'],
+    executor: 'niche-visionary-squad-skill'
   },
 
   'infoproduct_publishing_squad': {
-    nome: 'InfoproductPublishingSquad',
-    descricao: 'Cria e publica ebook, curso e ativos de infoproduto.',
-    dominios: ['content', 'product', 'monetization'],
-    tasks: ['create_ebook', 'create_infoproduct', 'publish_infoproduct'],
-    tools: ['memory', 'web_search'],
-    executor: 'infoproduct-publishing-squad-skill',
-    modelTier: 'strong'
+    nome: 'InfoProductPublishingSquad',
+    descricao: 'Ebooks, cursos, workbooks, guias práticos, livros digitais completos (score mínimo 85)',
+    dominios: ['infoproduct', 'content'],
+    tasks: ['create', 'create_ebook', 'create_book', 'create_course', 'create_workbook'],
+    tools: ['memory'],
+    executor: 'infoproduct-publishing-squad-skill'
   },
 
-  'bio_optimizer': {
-    nome: 'BioOptimizer',
-    descricao: 'Otimiza bios de Instagram, YouTube, LinkedIn e outras plataformas',
-    dominios: ['content', 'growth', 'hunter'],
-    tasks: ['optimize_bio', 'optimize_profile', 'analyze_profile'],
+  'creative_review_squad': {
+    nome: 'CreativeReviewSquad',
+    descricao: 'Revisão criativa de vídeos, imagens, thumbnails, carrosséis e consistência visual',
+    dominios: ['visual', 'video', 'creative'],
+    tasks: ['review_image', 'review_thumbnail', 'review_carousel', 'review_clip', 'review_final', 'review_consistency'],
     tools: ['memory'],
-    executor: 'bio-optimizer-skill'
+    executor: 'creative-review-squad-skill'
   },
-  'carousel_generator': {
-    nome: 'CarouselGenerator',
-    descricao: 'Gera carrosséis completos com copy, estrutura visual e prompts de imagem',
+
+  // ── CHANNEL NICHE RESEARCH SQUAD (v28-final3 complemento) ─────────────────
+
+  'channel_niche_research_squad': {
+    nome: 'ChannelNicheResearchSquad',
+    descricao: 'Pesquisa nichos, subnichos e oportunidades para canais no YouTube, TikTok, Instagram/Reels, Kwai e dark/faceless. Avalia demanda, saturação, retenção, monetização, dificuldade de produção e potencial recorrente. NÃO substitui o Niche Visionary Squad: foca em canal/plataforma/formato, não em produto/mercado.',
+    dominios: ['channel_growth', 'growth', 'dark'],
+    tasks: [
+      'find_niches', 'research_niche', 'analyze_niche', 'dark_niche_research',
+      'platform_fit', 'monetization_paths', 'competitor_map', 'create_strategy_seed',
+      'find_channel_niches', 'channel_opportunities',
+    ],
+    tools: ['web_search', 'memory'],
+    executor: 'channel-niche-research-squad-skill',
+  },
+
+  // ── SPORTS INTELLIGENCE (v28 sports) ────────────────────────────────────────
+
+  'sports_intelligence_squad': {
+    nome: 'SportsIntelligenceSquad',
+    descricao: 'Análise esportiva probabilística para uso pessoal: probabilidade 1x2, trajetória, histórico, casa/fora, risco, viabilidade e aprendizado. Dados reais de APIs, cache e fallback manual. Não promete resultados.',
+    dominios: ['sports', 'football'],
+    tasks: ['analyze_match', 'predict_match', 'analyze_round', 'analyze_today', 'analyze_team', 'analyze_league', 'results_learning', 'team_trajectory', 'historical_results', 'match_viability'],
+    tools: ['memory'],
+    executor: 'sports-intelligence-squad-skill',
+  },
+
+  // ── SQUADS FINAIS (v28 empresa) ──────────────────────────────────────────────
+
+  'deep_research_squad': {
+    nome: 'DeepResearchSquad',
+    descricao: 'Pesquisa profunda com dossiês, fontes, síntese, mapas de conhecimento e próximos passos acionáveis.',
+    dominios: ['research', 'content'],
+    tasks: ['deep_research', 'create_dossie', 'knowledge_map', 'market_research', 'synthesize'],
+    tools: ['web_search', 'memory'],
+    executor: 'deep-research-squad-skill',
+  },
+
+  'social_hunters_squad': {
+    nome: 'SocialHuntersSquad',
+    descricao: 'Caça padrões vencedores em TikTok, Instagram, YouTube, Shorts e Reels: hooks, formatos, temas, gaps e viral intelligence.',
+    dominios: ['hunter', 'research', 'growth'],
+    tasks: ['hunt_patterns', 'analyze_viral', 'find_hooks', 'map_competitors', 'find_gaps', 'social_research'],
+    tools: ['web_search', 'memory'],
+    executor: 'social-hunters-squad-skill',
+  },
+
+  'authority_channel_squad': {
+    nome: 'AuthorityChannelSquad',
+    descricao: 'Cria canais de autoridade e marca pessoal: posicionamento, diferencial, pilares, credibilidade, funil e monetização.',
+    dominios: ['growth', 'channel', 'marketing'],
+    tasks: ['create_strategy', 'build_authority', 'personal_brand', 'create_positioning', 'create_content_plan'],
+    tools: ['memory'],
+    executor: 'authority-channel-squad-skill',
+  },
+
+  'kdp_localization_squad': {
+    nome: 'KDPLocalizationSquad',
+    descricao: 'Localiza livros para KDP internacional: título, descrição HTML, keywords de backend, categorias, preço, compliance e brief de capa.',
+    dominios: ['infoproduct', 'content'],
+    tasks: ['localize_book', 'translate_metadata', 'optimize_kdp', 'create_kdp_package', 'check_kdp_compliance'],
+    tools: ['memory'],
+    executor: 'kdp-localization-squad-skill',
+  },
+
+  // ── NOVOS SQUADS (v28 master) ────────────────────────────────────────────────
+
+  'video_scriptwriting_squad': {
+    nome: 'VideoScriptwritingSquad',
+    descricao: 'Cria roteiros profissionais: curto (Shorts/TikTok/Reels), longo (YouTube), dark (faceless), narração, VSL, anúncio, storytelling, educativo. Reviewer: scriptQualityReviewAgent.',
+    dominios: ['script', 'content', 'dark', 'video', 'marketing', 'channel'],
+    tasks: ['create','create_short','create_long','create_dark','create_vsl','create_ad','create_reels_script','create_tiktok_script','create_youtube_script'],
+    tools: ['memory'],
+    executor: 'video-scriptwriting-squad-skill',
+  },
+
+  'growth_analytics_squad': {
+    nome: 'GrowthAnalyticsSquad',
+    descricao: 'Transforma métricas de vídeos e canais em aprendizado acionável: o que repetir, o que parar, próximos experimentos.',
+    dominios: ['analytics', 'growth'],
+    tasks: ['analyze_performance','log_data','generate_report','analyze_metrics','plan_experiment'],
+    tools: ['memory'],
+    executor: 'growth-analytics-squad-skill',
+  },
+
+  'content_production_squad': {
+    nome: 'ContentProductionSquad',
+    descricao: 'Transforma estratégia em pacote completo: roteiro, título, descrição, legenda, hashtags, CTA, thumb brief, checklist de publicação.',
+    dominios: ['content', 'script'],
+    tasks: ['create_package','produce_content','create_publishing_pack'],
+    tools: ['memory'],
+    executor: 'content-production-squad-skill',
+  },
+
+  'asset_library_squad': {
+    nome: 'AssetLibrarySquad',
+    descricao: 'Organiza e cataloga ativos reutilizáveis: hooks, roteiros, thumbnails, carrosséis, prompts, IRs, presets, vídeos, outputs.',
+    dominios: ['content', 'audio'],
+    tasks: ['organize','catalog','tag','search_assets','curate'],
+    tools: ['memory'],
+    executor: 'asset-library-squad-skill',
+  },
+
+  'publishing_package_squad': {
+    nome: 'PublishingPackageSquad',
+    descricao: 'Gera pacote final para postagem: YouTube, TikTok, Shorts, Reels — com título, descrição, legenda, hashtags, CTA e checklist.',
+    dominios: ['content'],
+    tasks: ['create_package','format_platform','finalize_post','create_checklist'],
+    tools: ['memory'],
+    executor: 'publishing-package-squad-skill',
+  },
+
+  'compliance_copyright_squad': {
+    nome: 'ComplianceCopyrightSquad',
+    descricao: 'Revisa riscos antes da publicação: copyright, políticas de plataforma, originalidade, tópicos sensíveis. Resultado: 🟢/🟡/🔴.',
+    dominios: ['content', 'dark', 'video'],
+    tasks: ['check_copyright','check_compliance','review_content_risk','audit'],
+    tools: ['memory'],
+    executor: 'compliance-copyright-squad-skill',
+  },
+
+  'supreme_training_squad': {
+    nome: 'SupremeTrainingSquad',
+    descricao: 'Academia interna do BotSquad: treina, audita, versiona e melhora os demais squads e agentes.',
+    dominios: ['training', 'system'],
+    tasks: ['bootstrap', 'train_agent', 'audit_all', 'audit_agent', 'build_playbook', 'research', 'deep_research'],
+    tools: ['memory'],
+    executor: null,
+  },
+
+  'fitness_coaching_squad': {
+    nome: 'FitnessCoachSquad',
+    descricao: 'Coach de treino para musculação, hipertrofia, emagrecimento e recomposição, com foco em segurança, progressão e check-ins.',
+    dominios: ['fitness', 'health'],
+    tasks: ['create_plan', 'adjust_plan', 'checkin', 'expert_mode', 'exercise_library', 'safety_screening', 'progression', 'recomposition'],
+    tools: ['memory'],
+    executor: null,
+  },
+
+  'carousel_image_prompt_squad': {
+    nome: 'CarouselImagePromptSquad',
+    descricao: 'Gera pacotes completos de prompts de imagem para carrosséis — prompt principal, negativo, composição, estilo visual e copy por slide. NÃO gera imagens.',
     dominios: ['visual', 'content'],
-    tasks: ['create_carousel', 'create_creative'],
+    tasks: ['create_carousel', 'create_prompt_pack', 'create_creative', 'create_prompt', 'generate_prompts'],
     tools: ['memory'],
-    executor: 'carousel-generator'
+    executor: null,
+    modelTier: 'mini',
+    qualityTier: 'strong',
   },
-  'email_sequence': {
-    nome: 'EmailSequence',
-    descricao: 'Cria sequências de email para lançamento, nutrição e vendas',
-    dominios: ['content', 'monetization'],
-    tasks: ['create_copy', 'create_funnel', 'email_sequence'],
+
+  // ── REVIEWERS (v28-final3) — registrados para aparecer em /api/system/agents ──
+
+  'globalQualityGateAgent': {
+    nome: 'GlobalQualityGateAgent',
+    descricao: 'Última checagem antes de entregar qualquer resultado: completo, seguro, sem segredos, com próximos passos',
+    dominios: ['agency'],
+    tasks: ['final_review', 'quality_check'],
     tools: ['memory'],
-    executor: 'email-sequence-skill'
+    executor: 'agency-command-squad-skill',
+    isReviewer: true,
+    minScore: 85,
   },
-  'prompt_image_generator': {
-    nome: 'PromptImageGenerator',
-    descricao: 'Cria prompts detalhados para imagens em ChatGPT, Midjourney ou DALL-E',
-    dominios: ['visual', 'content'],
-    tasks: ['create_creative', 'create_thumb', 'create_carousel'],
+
+  'creativeQualityReviewAgent': {
+    nome: 'CreativeQualityReviewAgent',
+    descricao: 'Revisa vídeos, thumbnails, carrosséis e imagens: gancho, hierarquia, consistência visual',
+    dominios: ['visual', 'video'],
+    tasks: ['review'],
     tools: ['memory'],
-    executor: 'prompt-image-generator'
+    executor: 'creative-review-squad-skill',
+    isReviewer: true,
+    minScore: 80,
   },
-  'script_writer': {
-    nome: 'ScriptWriter',
-    descricao: 'Cria roteiros completos para shorts, reels, anúncios e vídeos longos',
-    dominios: ['content', 'video'],
-    tasks: ['create_script', 'edit_short', 'create_reels'],
+
+  'growthStrategyReviewAgent': {
+    nome: 'GrowthStrategyReviewAgent',
+    descricao: 'Revisa estratégias de crescimento orgânico: plataforma-específica, acionável, com calendário',
+    dominios: ['growth'],
+    tasks: ['review'],
     tools: ['memory'],
-    executor: 'script-writer-skill'
+    executor: 'social-growth-squad-skill',
+    isReviewer: true,
+    minScore: 80,
+  },
+
+  'marketingConversionReviewAgent': {
+    nome: 'MarketingConversionReviewAgent',
+    descricao: 'Revisa ofertas, funis e copy: proposta de valor, dor/desejo, mecanismo único, monetização',
+    dominios: ['marketing'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'marketing-strategy-squad-skill',
+    isReviewer: true,
+    minScore: 80,
+  },
+
+  'trafficScaleReviewAgent': {
+    nome: 'TrafficScaleReviewAgent',
+    descricao: 'Revisa planos de tráfego: orgânico e pago, criativos, públicos, orçamento, métricas',
+    dominios: ['traffic'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'traffic-scale-squad-skill',
+    isReviewer: true,
+    minScore: 78,
+  },
+
+  'darkChannelReviewAgent': {
+    nome: 'DarkChannelReviewAgent',
+    descricao: 'Revisa canais dark/faceless: nicho viável, roteiro com gancho, sem risco de strike',
+    dominios: ['dark'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'dark-channel-squad-skill',
+    isReviewer: true,
+    minScore: 82,
+  },
+
+  'videoCuttingReviewAgent': {
+    nome: 'VideoCuttingReviewAgent',
+    descricao: 'Revisa cortes de vídeo: gancho, retenção, sem pausa morta, legenda, enquadramento vertical',
+    dominios: ['video'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'video-cutting-squad-skill',
+    isReviewer: true,
+    minScore: 80,
+  },
+
+  'productQualityReviewAgent': {
+    nome: 'ProductQualityReviewAgent',
+    descricao: 'Revisa infoprodutos: transformação clara, estrutura completa, exercícios, oferta irresistível',
+    dominios: ['infoproduct'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'infoproduct-publishing-squad-skill',
+    isReviewer: true,
+    minScore: 85,
+  },
+
+  'nicheOpportunityReviewAgent': {
+    nome: 'NicheOpportunityReviewAgent',
+    descricao: 'Revisa oportunidades de nicho: específico, monetizável, audiência apaixonada, blue ocean real',
+    dominios: ['niche'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'niche-visionary-squad-skill',
+    isReviewer: true,
+    minScore: 82,
+  },
+
+  'toneQualityReviewAgent': {
+    nome: 'ToneQualityReviewAgent',
+    descricao: 'Revisa presets e IRs: respeita limitações do equipamento, encaixa na mix, sample rate correto',
+    dominios: ['audio'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'audio-gear-squad-skill',
+    isReviewer: true,
+    minScore: 80,
+  },
+
+  'gearVisionReviewAgent': {
+    nome: 'GearVisionReviewAgent',
+    descricao: 'Revisa análises de imagem de equipamento: não inventa valores, separa visto/inferido/desconhecido',
+    dominios: ['audio'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'gear-vision-skill',
+    isReviewer: true,
+    minScore: 75,
+  },
+
+  'scriptQualityReviewAgent': {
+    nome: 'ScriptQualityReviewAgent',
+    descricao: 'Revisa roteiros: gancho nos 3s, ritmo, retenção, CTA, adequação à plataforma',
+    dominios: ['content'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'script-writer-skill',
+    isReviewer: true,
+    minScore: 80,
+  },
+
+  'channelNicheReviewerAgent': {
+    nome: 'ChannelNicheReviewerAgent',
+    descricao: 'Revisa pesquisas de nicho para canal: demanda real, conteúdo recorrente, monetização, saturação, diferencial claro, 30 ideias, próximo passo acionável',
+    dominios: ['channel_growth'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'channel-niche-research-squad-skill',
+    isReviewer: true,
+    minScore: 85,
+  },
+
+  'predictionReviewAgent': {
+    nome: 'PredictionReviewAgent',
+    descricao: 'Revisa análises esportivas: dados reais, probabilidades somando 100%, risco explicado, sem promessa de resultado',
+    dominios: ['sports'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'sports-intelligence-squad-skill',
+    isReviewer: true,
+    minScore: 85,
+  },
+
+  'sportsRiskGuardAgent': {
+    nome: 'SportsRiskGuardAgent',
+    descricao: 'Bloqueia promessa de lucro, certeza, all-in, recuperar prejuízo, aposta automática e linguagem irresponsável em análises esportivas',
+    dominios: ['sports'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'sports-intelligence-squad-skill',
+    isReviewer: true,
+    minScore: 100,
+  },
+
+  'researchReviewerAgent': {
+    nome: 'ResearchReviewerAgent',
+    descricao: 'Revisa pesquisas profundas: profundidade real, fontes diversas, dados quantitativos, síntese acionável',
+    dominios: ['research'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'deep-research-squad-skill',
+    isReviewer: true,
+    minScore: 85,
+  },
+
+  'hunterReviewAgent': {
+    nome: 'HunterReviewAgent',
+    descricao: 'Revisa análises de viral intelligence: padrões concretos, formatos por plataforma, exemplos reais, acionável',
+    dominios: ['hunter', 'research'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'social-hunters-squad-skill',
+    isReviewer: true,
+    minScore: 85,
+  },
+
+  'authorityReviewAgent': {
+    nome: 'AuthorityReviewAgent',
+    descricao: 'Revisa estratégias de canal de autoridade: posicionamento único, diferencial, plano de credibilidade e monetização',
+    dominios: ['growth', 'channel'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'authority-channel-squad-skill',
+    isReviewer: true,
+    minScore: 85,
+  },
+
+  'kdpComplianceReviewAgent': {
+    nome: 'KDPComplianceReviewAgent',
+    descricao: 'Revisa pacotes KDP: título com keywords, descrição HTML, 7 keywords de backend, categorias, preço e compliance',
+    dominios: ['infoproduct'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'kdp-localization-squad-skill',
+    isReviewer: true,
+    minScore: 87,
+  },
+
+  'translationQualityReviewAgent': {
+    nome: 'TranslationQualityReviewAgent',
+    descricao: 'Revisa qualidade de tradução: naturalidade no idioma alvo, adaptação cultural, tom adequado',
+    dominios: ['infoproduct', 'content'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'kdp-localization-squad-skill',
+    isReviewer: true,
+    minScore: 85,
+  },
+
+  'growthAnalyticsReviewAgent': {
+    nome: 'GrowthAnalyticsReviewAgent',
+    descricao: 'Revisa análises de crescimento: dados específicos usados, o que repetir definido, o que parar definido, próximo experimento claro',
+    dominios: ['analytics', 'growth'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'growth-analytics-squad-skill',
+    isReviewer: true,
+    minScore: 82,
+  },
+
+  'contentProductionReviewAgent': {
+    nome: 'ContentProductionReviewAgent',
+    descricao: 'Revisa pacotes de conteúdo: roteiro, título SEO, legenda engajante, hashtags relevantes, CTA claro, checklist presente',
+    dominios: ['content'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'content-production-squad-skill',
+    isReviewer: true,
+    minScore: 83,
+  },
+
+  'assetLibraryReviewAgent': {
+    nome: 'AssetLibraryReviewAgent',
+    descricao: 'Revisa organização de biblioteca de ativos: categorização clara, tags úteis, metadados completos',
+    dominios: ['content'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'asset-library-squad-skill',
+    isReviewer: true,
+    minScore: 78,
+  },
+
+  'publishingReviewAgent': {
+    nome: 'PublishingReviewAgent',
+    descricao: 'Revisa pacotes de publicação: versões por plataforma, hashtags corretas, CTA ativo, checklist completo',
+    dominios: ['content'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'publishing-package-squad-skill',
+    isReviewer: true,
+    minScore: 82,
+  },
+
+  'complianceReviewAgent': {
+    nome: 'ComplianceReviewAgent',
+    descricao: 'Revisa riscos editoriais: copyright, políticas de plataforma, originalidade, tópicos sensíveis — resultado 🟢/🟡/🔴',
+    dominios: ['content', 'dark', 'video'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'compliance-copyright-squad-skill',
+    isReviewer: true,
+    minScore: 80,
+  },
+
+  'copyConversionReviewAgent': {
+    nome: 'CopyConversionReviewAgent',
+    descricao: 'Revisa copy de venda: clareza da dor, promessa, prova, CTA, sem genérico',
+    dominios: ['content', 'marketing'],
+    tasks: ['review'],
+    tools: ['memory'],
+    executor: 'copy-squad-skill',
+    isReviewer: true,
+    minScore: 80,
+  },
+
+  'gear_vision': {
+    nome: 'GearVisionAgent',
+    descricao: 'Reconhece imagens de pedaleiras, pedals, amp modelers, IR loaders e gera presets compatíveis',
+    dominios: ['audio'],
+    tasks: ['recognize_gear_image', 'read_pedal_image', 'analyze_pedal_settings', 'create_preset_from_image', 'recreate_tone_from_screenshot'],
+    tools: ['memory'],
+    executor: 'gear-vision-skill'
+  },
+
+  // ── MOTOR PROFISSIONAL DE VÍDEO (v30) ─────────────────────────────────────
+
+  'video_pro_toolchain_status': {
+    nome: 'VideoProToolchainStatus',
+    descricao: 'Verifica status das ferramentas do Motor Profissional de edição de vídeo: ffmpeg, ffprobe, OpenCV, PySceneDetect, Whisper, Librosa, YOLO e readiness do pipeline',
+    dominios: ['video'],
+    tasks: ['check_tools', 'pipeline_status', 'toolchain_status'],
+    tools: ['memory'],
+    executor: 'video-pro-toolchain-skill'
+  },
+
+  'video_pro_analyze': {
+    nome: 'VideoProAnalyzer',
+    descricao: 'Análise profissional de vídeo com PySceneDetect, OpenCV, Librosa e Whisper. Retorna cenas, motionTimeline, audioEnergy, speechSegments, usedTools e artefatos salvos.',
+    dominios: ['video'],
+    tasks: ['analyze_video', 'pro_analyze', 'video_analysis', 'analisa_video'],
+    tools: ['memory', 'ffmpeg'],
+    executor: 'video-pro-analyze-skill'
+  },
+
+  'video_highlight_detector': {
+    nome: 'VideoHighlightDetector',
+    descricao: 'Detecta melhores momentos do vídeo com score real por clip: audioPeak, motion, sceneChange, speechHook, durationFit. Respeita clipCount e targetDuration.',
+    dominios: ['video'],
+    tasks: ['detect_highlights', 'find_highlights', 'melhores_momentos', 'find_hot_moments'],
+    tools: ['memory'],
+    executor: 'video-highlight-skill'
+  },
+
+  'video_edit_plan_builder': {
+    nome: 'VideoEditPlanBuilder',
+    descricao: 'Transforma highlights em editPlan profissional com preset, colorPreset, audioPreset, captions, scoreBreakdown e salva JSON do plano.',
+    dominios: ['video'],
+    tasks: ['build_edit_plan', 'create_edit_plan', 'edit_plan'],
+    tools: ['memory'],
+    executor: 'video-edit-plan-skill'
+  },
+
+  'video_edit_supervisor': {
+    nome: 'VideoEditSupervisor',
+    descricao: 'Valida o editPlan antes do render: verifica quantidade, duração, scoreBreakdown, usedTools e consistência geral do plano.',
+    dominios: ['video'],
+    tasks: ['review_edit_plan', 'supervisor_review', 'validate_plan'],
+    tools: ['memory'],
+    executor: 'video-edit-supervisor-skill'
+  },
+
+  'video_dynamic_renderer': {
+    nome: 'VideoDynamicRenderer',
+    descricao: 'Renderiza MP4 profissional com FFmpeg aplicando formato 9:16/16:9, color preset, audio preset e overlays. Valida saída com ffprobe.',
+    dominios: ['video'],
+    tasks: ['render_video', 'render_clips', 'pro_render', 'renderiza_video'],
+    tools: ['memory', 'ffmpeg'],
+    executor: 'video-render-skill'
+  },
+
+  'video_output_validator': {
+    nome: 'VideoOutputValidator',
+    descricao: 'Valida MP4 final com ffprobe: duração, tamanho, codecs (h264+aac), sha256 e sanity checks.',
+    dominios: ['video'],
+    tasks: ['validate_output', 'validate_mp4', 'check_output'],
+    tools: ['memory'],
+    executor: 'video-output-validator-skill'
+  },
+
+  'video_preset_recommender': {
+    nome: 'VideoPresetRecommender',
+    descricao: 'Recomenda preset profissional com base no tipo de conteúdo: sports, podcast, worship, documentary, offer, tutorial, viral.',
+    dominios: ['video'],
+    tasks: ['recommend_preset', 'choose_preset', 'select_preset'],
+    tools: ['memory'],
+    executor: 'video-preset-recommender-skill'
+  },
+
+  'sports_highlight_pro_agent': {
+    nome: 'SportsHighlightProAgent',
+    descricao: 'Agente especializado em highlights esportivos: prioriza picos de áudio, movimento intenso, mudanças de cena e ação. Usa preset Sports Highlight Pro.',
+    dominios: ['video', 'sports'],
+    tasks: ['sports_highlights', 'esportes_highlights', 'gols', 'lances', 'melhores_lances'],
+    tools: ['memory', 'ffmpeg'],
+    executor: 'sports-highlight-agent-skill'
+  },
+
+  'podcast_cut_agent': {
+    nome: 'PodcastCutAgent',
+    descricao: 'Agente especializado em cortes de podcast e fala: usa Whisper para captions reais, cortes por frase e reframe.',
+    dominios: ['video'],
+    tasks: ['podcast_cut', 'podcast_clips', 'fala_corte', 'entrevista_corte'],
+    tools: ['memory'],
+    executor: 'podcast-cut-agent-skill'
+  },
+
+  'worship_music_cut_agent': {
+    nome: 'WorshipMusicCutAgent',
+    descricao: 'Agente especializado em cortes de música e worship: usa Librosa para beat/crescendo, evita cortes secos fora do tempo musical.',
+    dominios: ['video'],
+    tasks: ['worship_cut', 'music_cut', 'louvor_corte', 'musica_corte'],
+    tools: ['memory'],
+    executor: 'worship-cut-agent-skill'
+  },
+
+  'viral_shorts_editor_agent': {
+    nome: 'ViralShortsEditorAgent',
+    descricao: 'Agente especializado em cortes agressivos para Shorts/Reels: hook nos 2s, legenda grande, zoom, CTA.',
+    dominios: ['video'],
+    tasks: ['viral_shorts', 'shorts_edit', 'cortes_virais', 'reels_cut'],
+    tools: ['memory'],
+    executor: 'viral-shorts-agent-skill'
+  },
+
+  'video_reference_style_analyzer': {
+    nome: 'VideoReferenceStyleAnalyzer',
+    descricao: 'Analisa um vídeo de referência com o Motor Pro, extrai style-profile.json com ritmo, corte, zoom, transição, legenda e retorna referenceId e preset recomendado.',
+    dominios: ['video'],
+    tasks: ['analyze_reference', 'reference_style', 'analisar_referencia', 'estilo_referencia', 'aprender_estilo'],
+    tools: ['memory', 'ffmpeg'],
+    executor: 'video-reference-style-analyzer-skill'
+  },
+
+  'video_apply_reference_style': {
+    nome: 'VideoApplyReferenceStyle',
+    descricao: 'Aplica o estilo de um vídeo de referência (via referenceId + style-profile) a um vídeo fonte usando o Motor Pro. Retorna MP4 renderizado.',
+    dominios: ['video'],
+    tasks: ['apply_reference', 'apply_style', 'aplicar_referencia', 'aplicar_estilo', 'render_with_reference'],
+    tools: ['memory', 'ffmpeg'],
+    executor: 'video-apply-reference-style-skill'
   }
 };
 
@@ -680,8 +1194,8 @@ class SkillManager {
 
       // Bind openaiStrong to ctx.userId so skills use the user's own API key
       const userId = ctx?.userId || null;
-      const openaiStrongUser = (messages, opts = {}) => openaiStrong(messages, { ...opts, userId });
-      const openaiFastUser = (messages, opts = {}) => openaiFast(messages, { ...opts, userId });
+      const openaiStrongUser = (messages, opts = {}) => modelRouter.callStrong(messages, { ...opts, userId });
+      const openaiFastUser   = (messages, opts = {}) => modelRouter.callMini(messages, { ...opts, userId });
 
       const resultado = await executor(ctx, params, {
         webSearch:  webSearchFn,
@@ -753,25 +1267,17 @@ Responda APENAS com o ID da skill mais adequada.`;
     return Array.from(this.skills.entries())
       .filter(([, s]) => {
         if (filtro.dominio && !s.dominios.includes(filtro.dominio)) return false;
+        if (filtro.isReviewer !== undefined && !!s.isReviewer !== filtro.isReviewer) return false;
         return true;
       })
       .map(([id, s]) => ({
         id,
-        nome: s.nome,
-        name: s.nome,
-        descricao: s.descricao,
-        description: s.descricao,
-        dominios: s.dominios,
-        domain: s.dominios?.[0] || null,
-        tasks: s.tasks,
-        tools: s.tools,
-        executor: s.executor,
-        modelTier: s.modelTier || null,
-        qualityTier: s.qualityTier || null,
-        requiresApprovalBeforeRender: !!s.requiresApprovalBeforeRender,
-        inputSchema: s.inputSchema || {},
-        outputSchema: s.outputSchema || {},
-        source: 'skill-manager',
+        nome:       s.nome,
+        descricao:  s.descricao,
+        dominios:   s.dominios,
+        isReviewer: !!s.isReviewer,
+        minScore:   s.minScore || null,
+        executor:   s.executor || null,
       }));
   }
 
