@@ -204,24 +204,45 @@ function isAbortLikeError(err) {
   return Boolean(err?.isAbort || err?.name === 'AbortError' || err?.name === 'CanceledError' || err?.code === 'ECONNABORTED' || message === 'request_aborted' || message === 'aborted');
 }
 
+function formatToolUiStatus(tool = {}) {
+  if (tool?.status) return tool.status;
+  return tool?.available ? 'available' : 'missing';
+}
+
+function formatToolUiVersion(tool = {}) {
+  return tool?.version || tool?.path || (tool?.available ? 'detectado' : 'não instalado');
+}
+
 // Human-friendly stage labels — product language, not technical
 const STAGE_LABELS = {
-  queued:            '🕐 Aguardando na fila...',
-  recovering:        '🔄 Retomando job anterior...',
-  transcribing:      '🎙️ Transcrevendo fala com Whisper...',
-  detecting:         '📊 Analisando energia e pausas...',
-  analyzing:         '🧠 Identificando os melhores momentos...',
-  planning:          '✂️ Selecionando cortes de alto impacto...',
-  captions:          '💬 Gerando legendas dinâmicas...',
-  rendering:         '🎬 Renderizando vídeo final...',
+  queued:              '🕐 Aguardando na fila...',
+  recovering:          '🔄 Retomando job anterior...',
+  uploading:           '📤 Enviando vídeo...',
+  uploaded:            '📥 Vídeo recebido',
+  transcribing:        '🎙️ Transcrevendo fala com Whisper...',
+  detecting:           '📊 Analisando energia e pausas...',
+  analyzing:           '🧠 Identificando os melhores momentos...',
+  planning:            '✂️ Selecionando cortes de alto impacto...',
+  captions:            '💬 Gerando legendas dinâmicas...',
+  rendering:           '🎬 Renderizando cortes...',
   // v27 pipeline stages
-  probing:           '🔍 Analisando arquivo de vídeo...',
-  extracting_audio:  '🎵 Extraindo áudio...',
-  detecting_silence: '🔇 Detectando silêncios...',
-  detecting_moments: '⚡ Identificando melhores momentos...',
-  zipping:           '📦 Gerando ZIP...',
-  done:        '✅ Pronto para publicar',
-  error:       '❌ Erro no processamento',
+  probing:             '🔍 Analisando arquivo de vídeo...',
+  extracting_audio:    '🎵 Extraindo áudio...',
+  detecting_silence:   '🔇 Detectando silêncios...',
+  detecting_moments:   '⚡ Identificando melhores momentos...',
+  zipping:             '📦 Gerando ZIP...',
+  // Pro pipeline stages
+  analyzing_audio:     '🎵 Analisando áudio...',
+  detecting_scenes:    '🎬 Detectando cenas...',
+  detecting_motion:    '📹 Detectando movimento...',
+  scoring_highlights:  '⭐ Escolhendo melhores trechos...',
+  building_edit_plan:  '✂️ Gerando plano de edição...',
+  supervisor_review:   '🤖 IA Supervisora validando...',
+  validating_outputs:  '✅ Validando arquivos finais...',
+  completed:           '✅ Finalizado',
+  done:                '✅ Pronto para publicar',
+  error:               '❌ Erro no processamento',
+  failed:              '❌ Falha no processamento',
 };
 
 const TONE_LABELS = {
@@ -748,23 +769,80 @@ function JobCard({ job, onDismiss }) {
 
           {s.supervisorReview && (
             <div className="px-4 py-3 border-t border-gray-800 space-y-2">
-              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">IA Supervisora</p>
-              <div className="grid grid-cols-2 gap-2 text-[11px]">
-                <div className="rounded-lg bg-gray-900 px-2 py-1.5 border border-gray-800">
-                  <span className="text-gray-500">Aprovação:</span>{' '}
-                  <span className={s.supervisorReview.approved ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
-                    {s.supervisorReview.approved ? 'aprovado' : 'revisar'}
-                  </span>
+              <div className="flex items-center gap-2">
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider flex-1">IA Supervisora</p>
+                <span className={clsx('text-[10px] font-bold px-2 py-0.5 rounded-full border',
+                  s.supervisorReview.approved
+                    ? 'bg-green-500/15 border-green-500/40 text-green-400'
+                    : 'bg-red-500/15 border-red-500/40 text-red-400')}>
+                  {s.supervisorReview.approved ? '✅ Aprovado' : '⚠️ Revisar'}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-[11px]">
+                <div className="rounded-lg bg-gray-900 px-2 py-1.5 border border-gray-800 text-center">
+                  <p className="text-gray-600 text-[9px]">SCORE</p>
+                  <p className="text-gray-200 font-bold">{s.supervisorReview.score ?? s.supervisorReview.averageScore ?? '—'}</p>
                 </div>
-                <div className="rounded-lg bg-gray-900 px-2 py-1.5 border border-gray-800">
-                  <span className="text-gray-500">Score:</span>{' '}
-                  <span className="text-gray-200 font-bold">{s.supervisorReview.score}</span>
+                <div className="rounded-lg bg-gray-900 px-2 py-1.5 border border-gray-800 text-center">
+                  <p className="text-gray-600 text-[9px]">CLIPS</p>
+                  <p className="text-gray-200 font-bold">
+                    {s.supervisorReview.perClipChecks?.filter(c => c.approved).length ?? '—'}/{s.supervisorReview.perClipChecks?.length ?? s.supervisorReview.clipCount ?? '—'}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-gray-900 px-2 py-1.5 border border-gray-800 text-center">
+                  <p className="text-gray-600 text-[9px]">WARNINGS</p>
+                  <p className="text-gray-200 font-bold">
+                    {s.supervisorReview.perClipChecks?.reduce((n, c) => n + (c.warnings?.length || 0), 0) ?? (s.supervisorReview.warnings?.length ?? 0)}
+                  </p>
                 </div>
               </div>
               {Array.isArray(s.supervisorReview.issues) && s.supervisorReview.issues.length > 0 && (
                 <div className="rounded-lg bg-red-950/20 border border-red-900/40 px-2 py-2">
                   {s.supervisorReview.issues.slice(0, 3).map((issue, idx) => (
                     <p key={idx} className="text-[11px] text-red-200">• {issue}</p>
+                  ))}
+                </div>
+              )}
+              {Array.isArray(s.supervisorReview.perClipChecks) && s.supervisorReview.perClipChecks.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[9px] font-bold text-gray-600 uppercase tracking-wider">Validação por clip</p>
+                  {s.supervisorReview.perClipChecks.map((check, idx) => (
+                    <div key={check.clipId || idx} className={clsx(
+                      'rounded-lg border px-2 py-1.5',
+                      check.approved ? 'border-green-900/40 bg-green-950/10' : 'border-amber-900/40 bg-amber-950/10'
+                    )}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-gray-300">Clip {idx + 1}</span>
+                        {check.start != null && check.end != null && (
+                          <span className="text-[9px] text-gray-500 font-mono">{check.start?.toFixed(1)}s→{check.end?.toFixed(1)}s</span>
+                        )}
+                        {check.duration != null && (
+                          <span className="text-[9px] text-gray-600">{check.duration?.toFixed(1)}s</span>
+                        )}
+                        {check.score != null && (
+                          <span className="text-[9px] font-bold ml-auto" style={{ color: check.score >= 70 ? '#34d399' : '#fbbf24' }}>
+                            {check.score?.toFixed ? check.score.toFixed(0) : check.score}
+                          </span>
+                        )}
+                        <span className={clsx('text-[9px] font-bold', check.approved ? 'text-green-400' : 'text-amber-400')}>
+                          {check.approved ? '✅' : '⚠️'}
+                        </span>
+                      </div>
+                      {Array.isArray(check.issues) && check.issues.length > 0 && (
+                        <div className="mt-1">
+                          {check.issues.map((issue, i) => (
+                            <p key={i} className="text-[9px] text-red-300">• {issue}</p>
+                          ))}
+                        </div>
+                      )}
+                      {Array.isArray(check.warnings) && check.warnings.length > 0 && (
+                        <div className="mt-0.5">
+                          {check.warnings.map((w, i) => (
+                            <p key={i} className="text-[9px] text-amber-300/80">⚠ {w}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
@@ -799,7 +877,7 @@ function JobCard({ job, onDismiss }) {
           {/* v28: Pipeline clips with metadata status */}
           {hasValidOutputs && (
             <div className="p-3 space-y-2 border-t border-gray-800">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider flex items-center gap-1">
                   <Film size={10} />
                   {job.requestedClipCount && job.requestedClipCount !== validOutputs.length
@@ -815,6 +893,31 @@ function JobCard({ job, onDismiss }) {
                   <Send size={10} /> {telegramLabel('__all', 'Enviar todos para Telegram')}
                 </button>
               </div>
+              {/* Resumo de clipCount/targetDuration */}
+              {(job.requestedClipCount || job.requestedTargetDuration) && (
+                <div className="flex flex-wrap gap-2">
+                  {job.requestedClipCount && (
+                    <span className="text-[9px] rounded bg-gray-800 px-1.5 py-0.5 text-gray-400">
+                      solicitado: {job.requestedClipCount} clips
+                    </span>
+                  )}
+                  {job.requestedTargetDuration && (
+                    <span className="text-[9px] rounded bg-gray-800 px-1.5 py-0.5 text-gray-400">
+                      duração alvo: {job.requestedTargetDuration}s
+                    </span>
+                  )}
+                  {job.generatedClipCount != null && (
+                    <span className="text-[9px] rounded bg-gray-800 px-1.5 py-0.5 text-gray-400">
+                      gerado: {job.generatedClipCount} clips
+                    </span>
+                  )}
+                  {Array.isArray(job.actualDurations) && job.actualDurations.length > 0 && (
+                    <span className="text-[9px] rounded bg-gray-800 px-1.5 py-0.5 text-gray-400">
+                      durações: {job.actualDurations.map(d => `${Number(d).toFixed(0)}s`).join(', ')}
+                    </span>
+                  )}
+                </div>
+              )}
               {job.reasonIfGeneratedLess && (
                 <p className="text-[10px] text-yellow-400 bg-yellow-400/10 rounded-lg px-2 py-1.5">
                   {job.reasonIfGeneratedLess}
@@ -889,6 +992,16 @@ function JobCard({ job, onDismiss }) {
                     {/* Expandable proof section */}
                     {isExpanded && (
                       <div className="border-t border-gray-700/60 px-3 py-2.5 space-y-2.5 text-[10px]">
+                        {/* Video preview */}
+                        {clipUrl && (
+                          <video
+                            className="w-full rounded-lg border border-gray-700 bg-black max-h-48"
+                            controls
+                            playsInline
+                            preload="metadata"
+                            src={clipUrl}
+                          />
+                        )}
                         {/* Reason */}
                         {o.reason && (
                           <div>
@@ -2641,10 +2754,22 @@ export default function VideoPage() {
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           <button type="button" onClick={() => {
                             setSelectedEditPlanId(plan.id);
+                            if (plan.clipCount && plan.clipCount > 0) {
+                              setClipCount(plan.clipCount);
+                              setClipCountMode('fixed');
+                            }
+                            if (plan.desiredCutDurationSeconds && plan.desiredCutDurationSeconds > 0) {
+                              setClipDurationSeconds(plan.desiredCutDurationSeconds);
+                              setClipDurationMode('fixed');
+                            }
+                            if (plan.objective && OBJECTIVES.some(o => o.id === plan.objective)) {
+                              setObjective(plan.objective);
+                            }
                             jumpToVideoSquadTab('smartcut');
+                            toast.success(`Plano "${plan.name}" aplicado ao SmartCut`);
                           }}
-                            className="rounded-lg border border-brand-500/40 px-2 py-1 text-[10px] font-semibold text-brand-300">
-                            Usar no SmartCut
+                            className="rounded-lg border border-brand-500/60 bg-brand-500/10 px-2 py-1 text-[10px] font-bold text-brand-300 hover:bg-brand-500/20">
+                            ✅ Aplicar plano
                           </button>
                           <button type="button" onClick={() => handleEditPlan(plan)}
                             className="rounded-lg border border-gray-700 px-2 py-1 text-[10px] font-semibold text-gray-300 hover:border-gray-600">
@@ -2763,7 +2888,7 @@ export default function VideoPage() {
                       </button>
                       <button type="button" onClick={() => handleAnalyzeTutorialReference()}
                         className="rounded-xl border border-amber-500/30 px-3 py-2 text-xs font-semibold text-amber-300 hover:border-amber-400/50">
-                        Analisar como aula de edição
+                        Analisar estilo de edição
                       </button>
                       <button type="button" onClick={() => {
                         if (!selectedReferenceId) return toast.error('Selecione uma referência');
@@ -2917,7 +3042,7 @@ export default function VideoPage() {
                           </button>
                           <button type="button" onClick={() => handleAnalyzeTutorialReference(ref.id)}
                             className="rounded-lg border border-amber-500/30 px-2 py-1 text-[10px] font-semibold text-amber-300">
-                            Aula de edição
+                            Estilo de edição
                           </button>
                           <button type="button" onClick={() => {
                             setSelectedReferenceId(ref.id);
@@ -2946,21 +3071,47 @@ export default function VideoPage() {
 
             {(
               <div ref={framesSectionRef} className="space-y-3 rounded-2xl border border-gray-800 bg-gray-900/50 p-3">
-                <div>
-                  <p className="text-xs font-bold text-gray-200">ANÁLISE POR FRAMES</p>
-                  <p className="text-[11px] text-gray-500">FPS, duração, cortes detectados e timecodes da referência selecionada.</p>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-bold text-gray-200">ANÁLISE POR FRAMES</p>
+                    <p className="text-[11px] text-gray-500">FPS, duração, cortes detectados e timecodes da referência selecionada.</p>
+                  </div>
+                  {selectedReference && (
+                    <div className="flex gap-1.5 shrink-0">
+                      <button type="button" onClick={() => handleAnalyzeFrames(selectedReference.id)}
+                        className="rounded-lg border border-gray-700 px-2 py-1 text-[10px] font-semibold text-gray-300 hover:border-gray-600">
+                        Detectar cortes
+                      </button>
+                      <button type="button" onClick={() => handleAnalyzeStyle(selectedReference.id)}
+                        className="rounded-lg border border-gray-700 px-2 py-1 text-[10px] font-semibold text-gray-300 hover:border-gray-600">
+                        Analisar estilo
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {!lastFrameCutAnalysis && <p className="text-xs text-gray-500">Execute “Detectar cortes por frame” em uma referência para visualizar os dados.</p>}
+                {!lastFrameCutAnalysis && (
+                  <div className="rounded-xl border border-gray-800 bg-gray-900/50 px-3 py-3 space-y-1.5">
+                    <p className="text-xs text-gray-500">Sem dados de frames ainda.</p>
+                    <p className="text-[11px] text-gray-600">
+                      1. Selecione uma referência na aba Vídeos de Referência.<br/>
+                      2. Clique em "Detectar cortes por frame".<br/>
+                      3. Os dados aparecem aqui automaticamente.
+                    </p>
+                    {selectedReference && (
+                      <p className="text-[11px] text-brand-400">Referência selecionada: <span className="font-bold">{selectedReference.name}</span></p>
+                    )}
+                  </div>
+                )}
                 {lastFrameCutAnalysis && (
                   <>
                     <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
                       {[
-                        ['FPS', lastFrameCutAnalysis.fps],
-                        ['Duração', `${lastFrameCutAnalysis.duration}s`],
-                        ['Total de frames', lastFrameCutAnalysis.totalFrames],
-                        ['Cortes detectados', lastFrameCutAnalysis.detectedCuts?.length || 0],
-                        ['Média entre cortes', `${lastFrameCutAnalysis.averageShotLengthSeconds}s`],
-                        ['Ritmo', lastFrameCutAnalysis.editingPace],
+                        ['FPS', lastFrameCutAnalysis.fps ?? '—'],
+                        ['Duração', lastFrameCutAnalysis.duration != null ? `${lastFrameCutAnalysis.duration}s` : '—'],
+                        ['Total frames', lastFrameCutAnalysis.totalFrames ?? '—'],
+                        ['Cortes', lastFrameCutAnalysis.detectedCuts?.length ?? 0],
+                        ['Avg shot', lastFrameCutAnalysis.averageShotLengthSeconds != null ? `${lastFrameCutAnalysis.averageShotLengthSeconds}s` : '—'],
+                        ['Ritmo', lastFrameCutAnalysis.editingPace ?? '—'],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-xl border border-gray-800 bg-gray-900 px-2 py-2">
                           <p className="text-[10px] text-gray-600 uppercase tracking-wider">{label}</p>
@@ -2968,11 +3119,35 @@ export default function VideoPage() {
                         </div>
                       ))}
                     </div>
+                    {/* Style summary if available */}
+                    {lastStyleAnalysis && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          ['Ritmo', lastStyleAnalysis.rhythm],
+                          ['Legenda', lastStyleAnalysis.captionType],
+                          ['Zoom', lastStyleAnalysis.useZoom ? 'sim' : 'não'],
+                          ['Jump cut', lastStyleAnalysis.useJumpCut ? 'sim' : 'não'],
+                          ['Perfil', lastStyleAnalysis.resembles],
+                          ['Transição', lastStyleAnalysis.transitionStyle || '—'],
+                        ].filter(([, v]) => v).map(([label, value]) => (
+                          <div key={label} className="rounded-xl border border-violet-500/20 bg-violet-500/5 px-2 py-2">
+                            <p className="text-[10px] text-gray-600 uppercase tracking-wider">{label}</p>
+                            <p className="text-xs font-bold text-violet-300 mt-1">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="rounded-xl border border-gray-800 bg-gray-900 p-2 max-h-[260px] overflow-y-auto">
-                      {(lastFrameCutAnalysis.detectedCuts || []).map(cut => (
-                        <p key={`${cut.cutIndex}-${cut.frame}`} className="text-[11px] text-gray-300 py-1 border-b border-gray-800 last:border-b-0">
-                          Corte {cut.cutIndex} — frame {cut.frame} — {cut.timecode} — {cut.type}
-                        </p>
+                      <p className="text-[9px] text-gray-600 uppercase tracking-wider pb-1">Cortes detectados</p>
+                      {(lastFrameCutAnalysis.detectedCuts || []).length === 0 && (
+                        <p className="text-[11px] text-gray-500">Nenhum corte detectado.</p>
+                      )}
+                      {(lastFrameCutAnalysis.detectedCuts || []).map((cut, idx) => (
+                        <div key={`${cut.cutIndex ?? idx}-${cut.frame ?? idx}`} className="flex items-center gap-3 py-1 border-b border-gray-800 last:border-b-0">
+                          <span className="text-[9px] font-mono text-brand-400 w-14 shrink-0">{cut.timecode || '—'}</span>
+                          <span className="text-[10px] text-gray-400 flex-1 truncate">Corte {cut.cutIndex ?? idx + 1} · frame {cut.frame ?? '—'}</span>
+                          <span className="text-[9px] text-gray-600 shrink-0">{cut.type || '—'}</span>
+                        </div>
                       ))}
                     </div>
                   </>
@@ -2994,9 +3169,9 @@ export default function VideoPage() {
                         <div key={toolId} className="rounded-xl border border-gray-800 bg-gray-950/70 p-2">
                           <p className="text-[10px] uppercase tracking-wider text-gray-600">{toolId}</p>
                           <p className={clsx('mt-1 text-xs font-bold', tool?.available ? 'text-emerald-300' : 'text-amber-300')}>
-                            {tool?.available ? 'available' : 'degradado'}
+                            {formatToolUiStatus(tool) === 'missing' ? 'ausente' : formatToolUiStatus(tool)}
                           </p>
-                          <p className="mt-1 text-[10px] text-gray-500">{tool?.version || 'sem versão detectada'}</p>
+                          <p className="mt-1 text-[10px] text-gray-500">{formatToolUiVersion(tool)}</p>
                         </div>
                       ))}
                     </div>
@@ -3109,7 +3284,23 @@ export default function VideoPage() {
 
                     {/* ── PIPELINE INTERATIVO MOTOR PRO ─────────────────── */}
                     <div className="rounded-xl border border-brand-500/30 bg-brand-500/5 p-3 space-y-3">
-                      <p className="text-[11px] font-bold text-brand-300">PIPELINE INTERATIVO — MOTOR PROFISSIONAL</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-bold text-brand-300">PIPELINE INTERATIVO — MOTOR PROFISSIONAL</p>
+                        {(clipCount || clipDurationPayload.clipDurationSeconds) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (clipCount) setProClipCount(clipCount);
+                              const dur = clipDurationPayload.targetClipDuration || clipDurationPayload.clipDurationSeconds;
+                              if (dur && dur !== 'auto') setProTargetDuration(Number(dur));
+                              toast.success('Valores do SmartCut aplicados');
+                            }}
+                            className="rounded-lg border border-brand-500/30 px-2 py-1 text-[9px] font-bold text-brand-400 hover:bg-brand-500/10"
+                          >
+                            Sincronizar com SmartCut
+                          </button>
+                        )}
+                      </div>
 
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         <div>
@@ -3135,14 +3326,17 @@ export default function VideoPage() {
                           </select>
                         </div>
                         <div>
-                          <label className="text-[10px] text-gray-500 uppercase tracking-wider">Clips</label>
-                          <input type="number" min={1} max={10} className="mt-1 w-full rounded-lg border border-gray-700 bg-gray-900 px-2 py-1.5 text-[11px] text-gray-200" value={proClipCount} onChange={e => setProClipCount(Number(e.target.value))} />
+                          <label className="text-[10px] text-gray-500 uppercase tracking-wider">Clips (clipCount)</label>
+                          <input type="number" min={1} max={100} className="mt-1 w-full rounded-lg border border-gray-700 bg-gray-900 px-2 py-1.5 text-[11px] text-gray-200" value={proClipCount} onChange={e => setProClipCount(Number(e.target.value))} />
                         </div>
                         <div>
-                          <label className="text-[10px] text-gray-500 uppercase tracking-wider">Duração alvo (s)</label>
+                          <label className="text-[10px] text-gray-500 uppercase tracking-wider">Duração alvo em segundos (targetDuration)</label>
                           <input type="number" min={5} max={300} className="mt-1 w-full rounded-lg border border-gray-700 bg-gray-900 px-2 py-1.5 text-[11px] text-gray-200" value={proTargetDuration} onChange={e => setProTargetDuration(Number(e.target.value))} />
                         </div>
                       </div>
+                      <p className="text-[9px] text-gray-600">
+                        clipCount={proClipCount} · targetDuration={proTargetDuration}s · preset={proPresetId}
+                      </p>
 
                       <button
                         type="button"
@@ -3205,15 +3399,46 @@ export default function VideoPage() {
                       )}
 
                       {proRenderResult && (
-                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-2 space-y-1">
-                          <p className="text-[10px] font-bold text-emerald-300 uppercase">Render Completo — {proRenderResult.outputs?.length || 0} arquivo(s)</p>
-                          {proRenderResult.primaryOutput && (
-                            <div className="flex items-center gap-2">
-                              <p className="text-[10px] text-gray-300">{proRenderResult.primaryOutput.fileName}</p>
-                              <span className="text-[9px] text-gray-500">{((proRenderResult.primaryOutput.size || 0) / 1024 / 1024).toFixed(1)}MB</span>
-                              <span className="text-[9px] text-gray-500">{proRenderResult.primaryOutput.duration?.toFixed(1)}s</span>
-                              <span className="text-[9px] text-emerald-400">{proRenderResult.primaryOutput.videoCodec}</span>
+                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-2 space-y-2">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <p className="text-[10px] font-bold text-emerald-300 uppercase">
+                              Render Completo — {proRenderResult.outputs?.length || 0} arquivo(s)
+                            </p>
+                            {proRenderResult.requestedClipCount && proRenderResult.generatedClipCount != null && (
+                              <span className="text-[9px] text-gray-500">
+                                Solicitado: {proRenderResult.requestedClipCount} · Gerado: {proRenderResult.generatedClipCount}
+                              </span>
+                            )}
+                          </div>
+                          {proRenderResult.requestedTargetDuration && (
+                            <p className="text-[9px] text-gray-500">
+                              Duração alvo: {proRenderResult.requestedTargetDuration}s
+                              {Array.isArray(proRenderResult.actualDurations) && proRenderResult.actualDurations.length > 0 && (
+                                <> · Durações reais: {proRenderResult.actualDurations.map(d => `${Number(d).toFixed(1)}s`).join(', ')}</>
+                              )}
+                            </p>
+                          )}
+                          {proRenderResult.reasonIfGeneratedLess && (
+                            <p className="text-[9px] text-amber-400 rounded bg-amber-500/10 px-1.5 py-1">
+                              {proRenderResult.reasonIfGeneratedLess}
+                            </p>
+                          )}
+                          {(proRenderResult.outputs || []).map((out, i) => (
+                            <div key={i} className="rounded-lg border border-gray-800 bg-gray-900 px-2 py-1.5 space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Play size={10} className="text-emerald-400 shrink-0" />
+                                <p className="text-[10px] text-gray-200 flex-1 truncate">{out.fileName || `clip_${i + 1}.mp4`}</p>
+                                <span className="text-[9px] text-gray-500">{((out.size || 0) / 1024 / 1024).toFixed(1)}MB</span>
+                                <span className="text-[9px] text-gray-500">{out.duration?.toFixed ? out.duration.toFixed(1) : out.duration}s</span>
+                                <span className="text-[9px] text-emerald-400">{out.videoCodec || 'h264'}</span>
+                                {out.width && out.height && (
+                                  <span className="text-[9px] text-gray-600">{out.width}×{out.height}</span>
+                                )}
+                              </div>
                             </div>
+                          ))}
+                          {proRenderResult.editReport && (
+                            <p className="text-[9px] text-gray-600">Relatório: {proRenderResult.editReport}</p>
                           )}
                         </div>
                       )}
@@ -3378,9 +3603,9 @@ export default function VideoPage() {
                           <p className="text-[10px] font-bold text-gray-300 uppercase">Status: {fsPreflight.status || (fsPreflight.ready ? 'ready' : 'blocked')}</p>
 
                           {/* Tool layers */}
-                          {fsPreflight.toolStatus && (
+                          {(fsPreflight.toolStatus || fsPreflight.toolAvailability) && (
                             <div className="grid grid-cols-3 gap-1">
-                              {Object.entries(fsPreflight.toolStatus).map(([tool, avail]) => (
+                              {Object.entries(fsPreflight.toolStatus || fsPreflight.toolAvailability).map(([tool, avail]) => (
                                 <div key={tool} className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${avail ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
                                   {avail ? '✓' : '✗'} {tool}
                                 </div>
@@ -3418,13 +3643,13 @@ export default function VideoPage() {
                               <p className="text-[9px] text-cyan-400 font-bold uppercase">Próximas ações:</p>
                               <ul className="mt-0.5 space-y-0.5">
                                 {fsPreflight.nextActions.map((a, i) => (
-                                  <li key={i} className="text-[9px] text-gray-400 font-mono break-all">• {a}</li>
+                                  <li key={i} className="text-[9px] text-gray-400 break-all">• {typeof a === 'string' ? a : `${a.action || 'ação'} ${a.tool || ''}${a.hint ? ` — ${a.hint}` : ''}`}</li>
                                 ))}
                               </ul>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  navigator.clipboard?.writeText(fsPreflight.nextActions.filter(a => a.startsWith('apt') || a.startsWith('pip') || a.startsWith('brew') || a.startsWith('sudo') || a.startsWith('docker')).join('\n'));
+                                  navigator.clipboard?.writeText(fsPreflight.nextActions.map((a) => (typeof a === 'string' ? a : `${a.action || 'ação'} ${a.tool || ''}${a.hint ? ` — ${a.hint}` : ''}`)).join('\n'));
                                   toast.success('Comandos copiados!');
                                 }}
                                 className="mt-1 rounded-lg border border-cyan-500/30 px-2 py-0.5 text-[9px] text-cyan-400 hover:border-cyan-500/60"
@@ -3479,11 +3704,11 @@ export default function VideoPage() {
                               <span className="text-[9px] text-emerald-400">{fsRenderResult.primaryOutput.videoCodec}</span>
                             </div>
                           )}
-                          {fsRenderResult.stages && (
+                          {Array.isArray(fsRenderResult.stages) && (
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {Object.entries(fsRenderResult.stages).map(([stage, ok]) => (
-                                <span key={stage} className={`text-[8px] px-1 rounded ${ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                                  {ok ? '✓' : '✗'} {stage}
+                              {fsRenderResult.stages.map((stage, index) => (
+                                <span key={`${stage.stage || 'stage'}-${index}`} className={`text-[8px] px-1 rounded ${stage.status === 'ok' || stage.status === 'done' ? 'bg-emerald-500/10 text-emerald-400' : stage.status === 'running' ? 'bg-cyan-500/10 text-cyan-300' : 'bg-red-500/10 text-red-400'}`}>
+                                  {stage.status === 'ok' || stage.status === 'done' ? '✓' : stage.status === 'running' ? '…' : '✗'} {stage.stage}
                                 </span>
                               ))}
                             </div>
@@ -3695,6 +3920,29 @@ export default function VideoPage() {
               <>
             <div ref={smartcutSectionRef} />
 
+            {/* Active plan/reference badges */}
+            {(selectedPlan || selectedReference) && (
+              <div className="flex flex-wrap gap-2 rounded-xl border border-brand-500/20 bg-brand-500/5 px-3 py-2">
+                <span className="text-[10px] text-gray-500 w-full">Configuração ativa:</span>
+                {selectedPlan && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-500/20 border border-brand-500/40 px-2 py-0.5 text-[10px] font-bold text-brand-300">
+                    ✅ Plano: {selectedPlan.name}
+                    {selectedPlan.desiredCutDurationSeconds && <span className="opacity-70"> · {selectedPlan.desiredCutDurationSeconds}s</span>}
+                    {selectedPlan.clipCount && <span className="opacity-70"> · {selectedPlan.clipCount} clips</span>}
+                  </span>
+                )}
+                {selectedReference && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/20 border border-violet-500/40 px-2 py-0.5 text-[10px] font-bold text-violet-300">
+                    📎 Ref: {selectedReference.name}
+                  </span>
+                )}
+                <button type="button" onClick={() => { setSelectedEditPlanId(''); setSelectedReferenceId(''); }}
+                  className="ml-auto text-[9px] text-gray-600 hover:text-gray-400">
+                  Limpar
+                </button>
+              </div>
+            )}
+
             {/* Drop zone */}
             <div {...getRootProps()} className={clsx(
               'border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all',
@@ -3881,8 +4129,21 @@ export default function VideoPage() {
                   <input type="checkbox" checked={useFrameCutAnalysis} onChange={e => setUseFrameCutAnalysis(e.target.checked)} className="h-4 w-4 accent-brand-500" />
                 </label>
               </div>
-              <div className="text-[10px] text-gray-600">
-                Plano ativo: {selectedPlan?.name || 'nenhum'} • Referência ativa: {selectedReference?.name || 'nenhuma'}
+              <div className="flex flex-wrap items-center gap-2">
+                {selectedPlan ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-500/20 border border-brand-500/40 px-2 py-0.5 text-[10px] font-bold text-brand-300">
+                    ✅ Plano: {selectedPlan.name}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-gray-600">Plano: nenhum</span>
+                )}
+                {selectedReference ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/20 border border-violet-500/40 px-2 py-0.5 text-[10px] font-bold text-violet-300">
+                    📎 Ref: {selectedReference.name}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-gray-600">Referência: nenhuma</span>
+                )}
               </div>
             </div>
 
