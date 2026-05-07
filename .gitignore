@@ -1,48 +1,31 @@
+# Dependencies
 node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Environment secrets — NUNCA commitar
 .env
 .env.*
 !.env.example
 frontend/.env
 frontend/.env.*
+!frontend/.env.example
 backend/.env
 backend/.env.*
+!backend/.env.example
 
-dist/
-build/
-.next/
-.cache/
-coverage/
-
+# Storage — arquivos pesados e temporários
+storage/
+backend/storage/
+uploads/
 storage/uploads/
 storage/temp/
 storage/outputs/
 storage/jobs/
-storage/chunks/
 storage/library/
-storage/memory/agents/
 storage/drive-memory/
-storage/training/
-storage/**/*.mp4
-storage/**/*.mov
-storage/**/*.mkv
-storage/**/*.webm
-storage/**/*.wav
-storage/**/*.aiff
-storage/**/*.flac
-storage/**/*.zip
 
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-.DS_Store
-.vscode/
-.idea/
-
-*.zip
-*.tar
-*.tar.gz
+# Media
 *.mp4
 *.mov
 *.mkv
@@ -50,5 +33,32 @@ yarn-error.log*
 *.wav
 *.aiff
 *.flac
-.codex
-.codex/
+*.m4a
+*.m4v
+*.avi
+*.tmp
+*.bak
+*.bak[0-9]*
+*.backup
+*.old
+*.orig
+
+# Edit reports / render outputs / manifests (gerados automaticamente)
+storage/outputs/videos/edit-reports/
+storage/outputs/videos/pro-renders/
+storage/outputs/videos/*/manifest.json
+backend/src/storage/memory/
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.gz
+
+# Build
+frontend/dist/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+/tmp/

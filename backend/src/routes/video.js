@@ -38,6 +38,8 @@ import { getEditPreset, listEditPresetCategories, listEditPresets } from '../squ
 import { getToolsHealth } from '../services/system/toolsHealthService.js';
 import { getVideoProfessionalToolchainStatus } from '../services/video/toolchain/videoToolchainService.js';
 import { listProEditingPresets, getProEditingPreset } from '../services/video/presets/proEditingPresets.js';
+import { listEditStyleRecipes, createEditStyleRecipe, applyEditStyleRecipe } from '../services/video/presets/editStyleRecipes.js';
+import { runDynamicEditResearchAgent, saveResearchPreset, applyResearchPreset } from '../agents/video/dynamicEditResearchAgent.js';
 import { listProColorPresets } from '../services/video/color/colorPresetService.js';
 import { listProAudioPresets } from '../services/video/audio/proAudioChainService.js';
 import { runProAnalysis } from '../services/video/pipeline/proAnalysisService.js';
@@ -96,15 +98,24 @@ async function resolveProfessionalSource(body = {}, req = {}) {
 
 function legacyToolsPayloadFromToolchain(toolchain = {}) {
   const groups = toolchain.groups || {};
+  const makeLegacyStatus = (tool, fallbackVersion = null) => {
+    const available = Boolean(tool?.available);
+    return {
+      available,
+      status: available ? 'available' : 'missing',
+      version: tool?.version || tool?.path || fallbackVersion || null,
+      error: available ? null : (tool?.error || null),
+    };
+  };
   return {
-    ffmpeg: { available: Boolean(groups.baseVideo?.ffmpeg?.available), version: groups.baseVideo?.ffmpeg?.version || null },
-    ffprobe: { available: Boolean(groups.baseVideo?.ffprobe?.available), version: groups.baseVideo?.ffprobe?.version || null },
-    remotion: { available: Boolean(groups.motionGraphics?.remotion?.available), version: groups.motionGraphics?.remotion?.version || null },
-    natron: { available: Boolean(groups.composition?.natron?.available), version: groups.composition?.natron?.version || null },
-    opencv: { available: Boolean(groups.analysis?.opencv?.available), version: groups.analysis?.opencv?.version || null },
-    pyscenedetect: { available: Boolean(groups.analysis?.pyscenedetect?.available), version: groups.analysis?.pyscenedetect?.version || null },
-    whisper: { available: Boolean(groups.analysis?.whisper?.available), version: groups.analysis?.whisper?.version || null },
-    tesseract: { available: Boolean(groups.analysis?.tesseract?.available), version: groups.analysis?.tesseract?.version || null },
+    ffmpeg: makeLegacyStatus(groups.baseVideo?.ffmpeg),
+    ffprobe: makeLegacyStatus(groups.baseVideo?.ffprobe),
+    remotion: makeLegacyStatus(groups.motionGraphics?.remotion, 'local_compositions'),
+    natron: makeLegacyStatus(groups.composition?.natron, 'NatronRenderer detectado'),
+    opencv: makeLegacyStatus(groups.analysis?.opencv),
+    pyscenedetect: makeLegacyStatus(groups.analysis?.pyscenedetect),
+    whisper: makeLegacyStatus(groups.analysis?.whisper),
+    tesseract: makeLegacyStatus(groups.analysis?.tesseract),
   };
 }
 
@@ -197,6 +208,22 @@ function normalizeBoolean(value, fallback = false) {
 
 function hasOwn(obj = {}, key = '') {
   return Object.prototype.hasOwnProperty.call(obj || {}, key);
+}
+
+// Safe numeric parse: prevents NaN when caller sends a non-numeric string like "abc"
+// Also handles null/undefined/"" explicitly — Number(null)=0, so must guard before calling Number()
+function safeInt(value, fallback, min = 1, max = 999) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number.parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function safeNum(value, fallback, min = 0, max = 999999) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
 }
 
 function normalizeStyleIdValue(value = '') {
@@ -301,8 +328,8 @@ function resolveClipDurationOptions(processingMode, body = {}) {
     clipDurationSeconds: targetSeconds,
     clipDurationMode: 'fixed',
     targetClipDuration: targetSeconds,
-    minClipDuration: Number(body.minClipDuration) || bounds.min,
-    maxClipDuration: Number(body.maxClipDuration) || bounds.max,
+    minClipDuration: safeNum(body.minClipDuration, 0, 0, 600) || bounds.min,
+    maxClipDuration: safeNum(body.maxClipDuration, 0, 0, 600) || bounds.max,
   };
 }
 
@@ -823,8 +850,8 @@ router.post('/edit-plan/generate', requireAuth, async (req, res) => {
       videoId,
       analysisId,
       presetId,
-      requestedClipCount: Math.max(1, Math.min(Number(requestedClipCount || 3), 12)),
-      targetDuration: Math.max(15, Math.min(Number(targetDuration || 45), 180)),
+      requestedClipCount: safeInt(requestedClipCount, 3, 1, 12),
+      targetDuration: safeNum(targetDuration, 45, 15, 180),
       format,
       mode,
       goal,
@@ -858,20 +885,10 @@ router.get('/results/:jobId', requireAuth, async (req, res) => {
 
 router.get('/tools/status', async (req, res) => {
   const health = await getToolsHealth();
-  const byId = Object.fromEntries((health.tools || []).map(tool => [tool.id, tool]));
   const pro = await getVideoProfessionalToolchainStatus();
   res.json({
     success: true,
-    tools: {
-      ffmpeg: { available: Boolean(byId.ffmpeg?.installed), version: byId.ffmpeg?.version || null },
-      ffprobe: { available: Boolean(byId.ffprobe?.installed), version: byId.ffprobe?.version || null },
-      remotion: { available: Boolean(await fs.stat(path.resolve(process.cwd(), '.remotion')).catch(() => null)), version: 'local_compositions' },
-      natron: { available: Boolean((await fs.access('/usr/bin/NatronRenderer').then(() => true).catch(() => false))), version: null },
-      opencv: { available: Boolean(byId.opencv?.installed), version: byId.opencv?.version || null },
-      pyscenedetect: { available: Boolean(byId.scenedetect?.installed), version: byId.scenedetect?.version || null },
-      whisper: { available: Boolean(byId['local-transcription']?.installed || byId['faster-whisper']?.installed), version: byId['faster-whisper']?.version || byId['local-transcription']?.version || null },
-      tesseract: { available: Boolean(byId.tesseract?.installed), version: byId.tesseract?.version || null },
-    },
+    tools: legacyToolsPayloadFromToolchain(pro),
     total: health.total,
     installed: health.installed,
     toolchain: pro.groups,
@@ -907,14 +924,20 @@ router.get('/pro/audio-presets', async (req, res) => {
 
 router.post('/pro/analyze', async (req, res) => {
   try {
-    const { sourceVideo, videoId } = await resolveProfessionalSource(req.body || {}, req);
-    const preset = getProEditingPreset(req.body?.presetId || 'viral_shorts_aggressive');
+    const body = req.body || {};
+    const { sourceVideo, videoId } = await resolveProfessionalSource(body, req);
+    const recipeApplication = await applyEditStyleRecipe({
+      userId: req.user?.id || null,
+      recipeId: body.editStyleRecipeId || body.recipeId || null,
+      recipeData: body.recipe || null,
+    });
+    const preset = getProEditingPreset(body.presetId || recipeApplication?.presetId || 'viral_shorts_aggressive');
     const analysis = await runProAnalysis({
       sourceVideo,
-      targetDuration: Number(req.body?.targetDuration || 30),
+      targetDuration: safeNum(body.targetDuration ?? recipeApplication?.targetDuration, 30, 5, 600),
       preset,
     });
-    res.json({ ok: true, videoId, sourceVideo, analysis });
+    res.json({ ok: true, videoId, sourceVideo, analysis, recipe: recipeApplication?.recipe || null, recipeApplication });
   } catch (err) {
     res.status(err.status || 500).json({ ok: false, error: err.message });
   }
@@ -931,10 +954,15 @@ router.post('/pro/highlights', async (req, res) => {
   try {
     const body = req.body || {};
     const { sourceVideo, videoId } = await resolveProfessionalSource(body, req);
-    const preset = getProEditingPreset(body.presetId || 'viral_shorts_aggressive');
+    const recipeApplication = await applyEditStyleRecipe({
+      userId: req.user?.id || null,
+      recipeId: body.editStyleRecipeId || body.recipeId || null,
+      recipeData: body.recipe || null,
+    });
+    const preset = getProEditingPreset(body.presetId || recipeApplication?.presetId || 'viral_shorts_aggressive');
     const toolchain = await getVideoProfessionalToolchainStatus();
-    const clipCount = Number(body.clipCount || body.count || 5);
-    const targetDuration = Number(body.targetDuration || 30);
+    const clipCount = safeInt(body.clipCount ?? body.count ?? recipeApplication?.clipCount, 5, 1, 20);
+    const targetDuration = safeNum(body.targetDuration ?? recipeApplication?.targetDuration, 30, 5, 600);
     const analysis = body.analysis || await runProAnalysis({
       sourceVideo,
       targetDuration,
@@ -946,9 +974,15 @@ router.post('/pro/highlights', async (req, res) => {
       durationMode: body.durationMode || 'normal',
       preset,
       toolchain,
+      objective: body.objective || recipeApplication?.recipe?.objective || preset?.objective || null,
+      hookFirstEnabled: body.hookFirstEnabled ?? true,
+      openingStrengthPriority: body.openingStrengthPriority || 'high',
+      avoidDeadAirStart: body.avoidDeadAirStart ?? true,
+      preferSpeechStart: body.preferSpeechStart ?? true,
+      openingPreRollMs: body.openingPreRollMs ?? 300,
     });
     const { clips, meta } = normalizeHighlights(highlightsRaw);
-    res.json({ ok: true, videoId, sourceVideo, highlights: clips, highlightsMeta: meta, analysis });
+    res.json({ ok: true, videoId, sourceVideo, highlights: clips, highlightsMeta: meta, analysis, recipe: recipeApplication?.recipe || null, recipeApplication });
   } catch (err) {
     res.status(err.status || 500).json({ ok: false, error: err.message });
   }
@@ -958,21 +992,33 @@ router.post('/pro/edit-plan', async (req, res) => {
   try {
     const body = req.body || {};
     const { sourceVideo, videoId } = await resolveProfessionalSource(body, req);
-    const preset = getProEditingPreset(body.presetId || 'viral_shorts_aggressive');
+    const recipeApplication = await applyEditStyleRecipe({
+      userId: req.user?.id || null,
+      recipeId: body.editStyleRecipeId || body.recipeId || null,
+      recipeData: body.recipe || null,
+    });
+    const preset = getProEditingPreset(body.presetId || recipeApplication?.presetId || 'viral_shorts_aggressive');
     const toolchain = await getVideoProfessionalToolchainStatus();
+    const _editPlanTargetDur = safeNum(body.targetDuration ?? recipeApplication?.targetDuration, 30, 5, 600);
     const analysis = body.analysis || await runProAnalysis({
       sourceVideo,
-      targetDuration: Number(body.targetDuration || 30),
+      targetDuration: _editPlanTargetDur,
       preset,
     });
-    const targetDuration = Number(body.targetDuration || 30);
-    const clipCount = Number(body.clipCount || body.count || 5);
+    const targetDuration = _editPlanTargetDur;
+    const clipCount = safeInt(body.clipCount ?? body.count ?? recipeApplication?.clipCount, 5, 1, 20);
     const rawHighlights = body.highlights || scoreHighlights(analysis, {
       targetDuration,
       clipCount,
       durationMode: body.durationMode || 'normal',
       preset,
       toolchain,
+      objective: body.objective || recipeApplication?.recipe?.objective || preset?.objective || null,
+      hookFirstEnabled: body.hookFirstEnabled ?? true,
+      openingStrengthPriority: body.openingStrengthPriority || 'high',
+      avoidDeadAirStart: body.avoidDeadAirStart ?? true,
+      preferSpeechStart: body.preferSpeechStart ?? true,
+      openingPreRollMs: body.openingPreRollMs ?? 300,
     });
     const { clips: highlights, meta: highlightsMeta } = normalizeHighlights(rawHighlights);
     const jobId = body.jobId || `pro_${uuidv4()}`;
@@ -984,8 +1030,23 @@ router.post('/pro/edit-plan', async (req, res) => {
       format: body.format || '9:16',
       requestedColorPreset: body.colorPresetId || null,
       requestedAudioPreset: body.audioPresetId || null,
+      requestedClipCount: safeInt(body.clipCount ?? body.count ?? recipeApplication?.clipCount, 5, 1, 20),
+      requestedTargetDuration: _editPlanTargetDur,
+      editStyleRecipe: recipeApplication?.recipe || null,
+      dynamicEditEnabled: body.dynamicEditEnabled ?? recipeApplication?.dynamicEditEnabled,
+      pauseCutEnabled: body.pauseCutEnabled ?? recipeApplication?.pauseCutEnabled,
+      hookFirstEnabled: body.hookFirstEnabled ?? true,
+      openingStrengthPriority: body.openingStrengthPriority || 'high',
+      avoidDeadAirStart: body.avoidDeadAirStart ?? true,
+      preferSpeechStart: body.preferSpeechStart ?? true,
+      openingPreRollMs: body.openingPreRollMs ?? 300,
+      styleRules: body.styleRules || recipeApplication?.styleRules || null,
+      silenceThresholdDb: body.silenceThresholdDb ?? null,
+      minSilenceMs: body.minSilenceMs ?? null,
+      keepBreathMs: body.keepBreathMs ?? null,
+      maxPauseRemoveMs: body.maxPauseRemoveMs ?? null,
     });
-    res.json({ ok: true, jobId, videoId, sourceVideo, editPlan: built.plan, jsonPath: built.jsonPath, otioPath: built.otioPath, highlights, highlightsMeta, analysis });
+    res.json({ ok: true, jobId, videoId, sourceVideo, editPlan: built.plan, jsonPath: built.jsonPath, otioPath: built.otioPath, highlights, highlightsMeta, analysis, recipe: recipeApplication?.recipe || null, recipeApplication });
   } catch (err) {
     res.status(err.status || 500).json({ ok: false, error: err.message });
   }
@@ -1009,17 +1070,34 @@ router.post('/pro/render', async (req, res) => {
   try {
     const body = req.body || {};
     const { sourceVideo } = await resolveProfessionalSource(body, req);
+    const recipeApplication = await applyEditStyleRecipe({
+      userId: req.user?.id || null,
+      recipeId: body.editStyleRecipeId || body.recipeId || null,
+      recipeData: body.recipe || null,
+    });
     let editPlan = body.editPlan || body.plan || null;
     let highlights = body.highlights || [];
     let analysis = body.analysis || null;
     if (!editPlan) {
-      const preset = getProEditingPreset(body.presetId || 'viral_shorts_aggressive');
+      const preset = getProEditingPreset(body.presetId || recipeApplication?.presetId || 'viral_shorts_aggressive');
       const toolchain = await getVideoProfessionalToolchainStatus();
-      const targetDur = Number(body.targetDuration || 30);
+      const targetDur = safeNum(body.targetDuration ?? recipeApplication?.targetDuration, 30, 5, 600);
       analysis = analysis || await runProAnalysis({ sourceVideo, targetDuration: targetDur, preset });
       if (!highlights.length) {
-        const rawH = scoreHighlights(analysis, { targetDuration: targetDur, clipCount: Number(body.clipCount || 5), durationMode: body.durationMode || 'normal', preset, toolchain });
-        const norm = normalizeHighlights(rawH);
+        const rescored = scoreHighlights(analysis, {
+          targetDuration: targetDur,
+          clipCount: safeInt(body.clipCount ?? recipeApplication?.clipCount, 5, 1, 20),
+          durationMode: body.durationMode || 'normal',
+          preset,
+          toolchain,
+          objective: body.objective || recipeApplication?.recipe?.objective || preset?.objective || null,
+          hookFirstEnabled: body.hookFirstEnabled ?? true,
+          openingStrengthPriority: body.openingStrengthPriority || 'high',
+          avoidDeadAirStart: body.avoidDeadAirStart ?? true,
+          preferSpeechStart: body.preferSpeechStart ?? true,
+          openingPreRollMs: body.openingPreRollMs ?? 300,
+        });
+        const norm = normalizeHighlights(rescored);
         highlights = norm.clips;
       }
       const built = await buildProfessionalEditPlan({
@@ -1028,6 +1106,21 @@ router.post('/pro/render', async (req, res) => {
         highlights,
         presetId: preset.id,
         format: body.format || '9:16',
+        requestedClipCount: safeInt(body.clipCount ?? recipeApplication?.clipCount, 5, 1, 20),
+        requestedTargetDuration: targetDur,
+        editStyleRecipe: recipeApplication?.recipe || null,
+        dynamicEditEnabled: body.dynamicEditEnabled ?? recipeApplication?.dynamicEditEnabled,
+        pauseCutEnabled: body.pauseCutEnabled ?? recipeApplication?.pauseCutEnabled,
+        hookFirstEnabled: body.hookFirstEnabled ?? true,
+        openingStrengthPriority: body.openingStrengthPriority || 'high',
+        avoidDeadAirStart: body.avoidDeadAirStart ?? true,
+        preferSpeechStart: body.preferSpeechStart ?? true,
+        openingPreRollMs: body.openingPreRollMs ?? 300,
+        styleRules: body.styleRules || recipeApplication?.styleRules || null,
+        silenceThresholdDb: body.silenceThresholdDb ?? null,
+        minSilenceMs: body.minSilenceMs ?? null,
+        keepBreathMs: body.keepBreathMs ?? null,
+        maxPauseRemoveMs: body.maxPauseRemoveMs ?? null,
       });
       editPlan = built.plan;
     }
@@ -1035,9 +1128,32 @@ router.post('/pro/render', async (req, res) => {
       jobId: editPlan.jobId || body.jobId || `pro_${uuidv4()}`,
       sourceVideo,
       plan: editPlan,
+      analysis,
       format: body.format || editPlan.exports?.[0]?.format || '9:16',
+      metadataEnabled: body.metadataEnabled,
+      stripSourceMetadata: body.stripSourceMetadata,
+      watermarkEnabled: body.watermarkEnabled,
+      watermarkText: body.watermarkText,
+      authorName: body.authorName,
+      editedBy: body.editedBy,
+      dynamicEditEnabled: body.dynamicEditEnabled ?? recipeApplication?.dynamicEditEnabled,
+      pauseCutEnabled: body.pauseCutEnabled ?? recipeApplication?.pauseCutEnabled,
+      silenceThresholdDb: body.silenceThresholdDb ?? null,
+      minSilenceMs: body.minSilenceMs ?? null,
+      keepBreathMs: body.keepBreathMs ?? null,
+      maxPauseRemoveMs: body.maxPauseRemoveMs ?? null,
+      styleRules: body.styleRules || recipeApplication?.styleRules || null,
     });
-    res.json({ ok: true, render, primaryOutput: render.primaryOutput, outputs: render.outputs, editPlan });
+    res.json({
+      ok: true,
+      ...render,
+      render,
+      primaryOutput: render.primaryOutput,
+      outputs: render.outputs,
+      editPlan,
+      recipe: recipeApplication?.recipe || null,
+      recipeApplication,
+    });
   } catch (err) {
     res.status(err.status || 500).json({ ok: false, error: err.message });
   }
@@ -1568,9 +1684,94 @@ async function sendEditPresetsResponse(res, requestedPresetId = null) {
   });
 }
 
+async function sendEditRecipesResponse(req, res, requestedRecipeId = null) {
+  const recipes = await listEditStyleRecipes({ userId: req.user?.id || null });
+  const applied = requestedRecipeId
+    ? await applyEditStyleRecipe({ userId: req.user?.id || null, recipeId: requestedRecipeId })
+    : null;
+  res.json({
+    ok: true,
+    success: true,
+    count: recipes.length,
+    recipes,
+    recipeApplied: applied?.recipe || null,
+    recipeApplication: applied || null,
+  });
+}
+
 router.get('/editing-presets', (req, res) => sendEditPresetsResponse(res, req.query?.presetId || null));
 router.post('/edit-presets', requireAuth, (req, res) => sendEditPresetsResponse(res, req.body?.presetId || null));
 router.post('/editing-presets', requireAuth, (req, res) => sendEditPresetsResponse(res, req.body?.presetId || null));
+router.get('/edit-recipes', requireAuth, (req, res) => sendEditRecipesResponse(req, res, req.query?.recipeId || null));
+router.post('/edit-recipes', requireAuth, async (req, res) => {
+  try {
+    const recipe = await createEditStyleRecipe({ userId: req.user.id, data: req.body || {} });
+    const application = await applyEditStyleRecipe({ userId: req.user.id, recipeId: recipe.id });
+    res.status(201).json({ ok: true, recipe, recipeApplication: application });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+router.post('/edit-recipes/apply', requireAuth, async (req, res) => {
+  try {
+    const application = await applyEditStyleRecipe({
+      userId: req.user.id,
+      recipeId: req.body?.recipeId || req.body?.editStyleRecipeId || null,
+      recipeData: req.body?.recipe || null,
+    });
+    if (!application?.recipe) {
+      return res.status(404).json({ ok: false, error: 'Recipe não encontrado' });
+    }
+    res.json({ ok: true, ...application });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+router.post('/research/dynamic-cuts', async (req, res) => {
+  try {
+    const result = await runDynamicEditResearchAgent({
+      query: req.body?.query || '',
+      platform: req.body?.platform || 'reels',
+      niche: req.body?.niche || 'educational',
+      contentType: req.body?.contentType || 'talking_head',
+      rhythm: req.body?.rhythm || req.body?.pace || 'rápido',
+      language: req.body?.language || 'pt-BR',
+      userId: req.user?.id || null,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ ok: false, error: err.message });
+  }
+});
+router.post('/research/save-preset', async (req, res) => {
+  try {
+    const result = await saveResearchPreset({
+      researchId: req.body?.researchId || '',
+      preset: req.body?.preset || null,
+      userId: req.user?.id || null,
+    });
+    res.json({
+      ok: true,
+      presetId: result.presetId,
+      saved: true,
+      preset: result.preset,
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ ok: false, error: err.message });
+  }
+});
+router.post('/research/apply-preset', async (req, res) => {
+  try {
+    const result = await applyResearchPreset({
+      presetId: req.body?.presetId || '',
+      target: req.body?.target || 'smartcut',
+      userId: req.user?.id || null,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ ok: false, error: err.message });
+  }
+});
 router.get('/editing-library/plans', requireAuth, async (req, res) => {
   const plans = await listEditPlans({ userId: req.user.id });
   res.json({ ok: true, plans });
@@ -1722,6 +1923,13 @@ router.post('/smartcut', requireAuth, async (req, res) => {
       styleAiInstructions = '',
       captionStyle = 'none',
       processingMode = 'opus_auto',
+      editStyleRecipeId = null,
+      editStyleRecipeName = null,
+      selectedPresetId = null,
+      presetId = null,
+      dynamicEditEnabled = null,
+      pauseCutEnabled = null,
+      styleRules = null,
     } = req.body || {};
 
     if (!filePath) return res.status(400).json({ ok: false, error: 'filePath obrigatório' });
@@ -1741,6 +1949,12 @@ router.post('/smartcut', requireAuth, async (req, res) => {
       useFrameCutAnalysis: normalizeBoolean(useFrameCutAnalysis ?? supervisorEnabled),
       explicitPlatform: platform,
     });
+    const recipeApplication = await applyEditStyleRecipe({
+      userId: req.user.id,
+      recipeId: editStyleRecipeId,
+      recipeData: editStyleRecipeId ? null : (styleRules ? { ...(req.body || {}), id: editStyleRecipeId || undefined } : null),
+    });
+    const activeRecipe = recipeApplication?.recipe || null;
 
     const normalizedProcessingMode = resolveEffectiveProcessingMode(processingMode);
     const stylePayload = buildEditStylePayload({
@@ -1759,22 +1973,22 @@ router.post('/smartcut', requireAuth, async (req, res) => {
     const styleOverrides = styleContext.overrides || {};
     const rawClipCount = requestedClipCount ?? clipCount ?? count ?? req.body?.maxClips ?? maxClips;
     const resolvedCount = manualCountProvided
-      ? Math.max(1, Math.min(Number(rawClipCount || 8), 100))
-      : Math.max(1, Math.min(Number(styleOverrides.count || rawClipCount || 8), 100));
+      ? safeInt(rawClipCount, 8, 1, 100)
+      : safeInt(recipeApplication?.clipCount ?? styleOverrides.count ?? rawClipCount, 8, 1, 100);
     const rawDuration = requestedClipDurationSeconds ?? clipDurationSeconds ?? targetClipDuration ?? req.body?.targetDuration ?? targetDuration;
     const resolvedTargetDuration = manualDurationProvided
-      ? Number(rawDuration || 45)
-      : Number(styleOverrides.targetClipDuration || styleOverrides.clipDurationSeconds || rawDuration || 45);
+      ? safeNum(rawDuration, 45, 5, 600)
+      : safeNum(recipeApplication?.targetDuration ?? styleOverrides.targetClipDuration ?? styleOverrides.clipDurationSeconds ?? rawDuration, 45, 5, 600);
 
     const resolvedMinClipDurationSmartcut = manualDurationProvided
-      ? (Number(minClipDuration) || Math.max(8, Math.round(resolvedTargetDuration * 0.75)))
-      : Number(styleOverrides.minClipDuration || Math.max(8, Math.round(resolvedTargetDuration * 0.75)));
+      ? (safeNum(minClipDuration, 0, 0, 600) || Math.max(8, Math.round(resolvedTargetDuration * 0.75)))
+      : (safeNum(styleOverrides.minClipDuration, 0, 0, 600) || Math.max(8, Math.round(resolvedTargetDuration * 0.75)));
     const resolvedMaxClipDurationSmartcut = manualDurationProvided
-      ? (Number(maxClipDuration) || Math.round(resolvedTargetDuration * 1.25))
-      : Number(styleOverrides.maxClipDuration || Math.round(resolvedTargetDuration * 1.25));
+      ? (safeNum(maxClipDuration, 0, 0, 600) || Math.round(resolvedTargetDuration * 1.25))
+      : (safeNum(styleOverrides.maxClipDuration, 0, 0, 600) || Math.round(resolvedTargetDuration * 1.25));
     const jobOptions = {
       platform: styleOverrides.platform || platform,
-      objective,
+      objective: recipeApplication?.objective || objective,
       contentType: 'auto',
       cutType: 'short_form',
       format,
@@ -1791,11 +2005,18 @@ router.post('/smartcut', requireAuth, async (req, res) => {
       maxClipDuration: resolvedMaxClipDurationSmartcut,
       minScore: Number(minScore || process.env.VIDEO_DEFAULT_MIN_SCORE || 70),
       captionsEnabled: true,
-      captionStyle: styleOverrides.captionStyle || captionStyle,
+      captionStyle: recipeApplication?.captionStyle || styleOverrides.captionStyle || captionStyle,
       captionMode: 'clean',
-      editPace: styleOverrides.editPace || 'medium',
+      editPace: recipeApplication?.editPace || styleOverrides.editPace || 'medium',
       ...stylePayload,
-      editStyle: styleOverrides.editStyle || stylePayload.editStyle,
+      editStyle: recipeApplication?.editStyleId || styleOverrides.editStyle || stylePayload.editStyle,
+      editStyleRecipeId: activeRecipe?.id || editStyleRecipeId || null,
+      editStyleRecipeName: activeRecipe?.name || editStyleRecipeName || null,
+      selectedPresetId: activeRecipe?.selectedPresetId || selectedPresetId || presetId || null,
+      presetId: recipeApplication?.presetId || selectedPresetId || presetId || null,
+      dynamicEditEnabled: dynamicEditEnabled ?? recipeApplication?.dynamicEditEnabled,
+      pauseCutEnabled: pauseCutEnabled ?? recipeApplication?.pauseCutEnabled,
+      styleRules: activeRecipe?.styleRules || styleRules || null,
       metadataCleanup: true,
       autoSendTelegram: false,
       editPlanId: resolvedEditPlanId,
@@ -1817,6 +2038,12 @@ router.post('/smartcut', requireAuth, async (req, res) => {
         useReferenceStyle: normalizeBoolean(useReferenceStyle ?? supervisorEnabled),
         useFrameCutAnalysis: normalizeBoolean(useFrameCutAnalysis ?? supervisorEnabled),
         supervisorEnabled: normalizeBoolean(supervisorEnabled, true),
+        editStyleRecipeId: activeRecipe?.id || editStyleRecipeId || null,
+        editStyleRecipeName: activeRecipe?.name || editStyleRecipeName || null,
+        selectedPresetId: activeRecipe?.selectedPresetId || selectedPresetId || presetId || null,
+        dynamicEditEnabled: dynamicEditEnabled ?? recipeApplication?.dynamicEditEnabled,
+        pauseCutEnabled: pauseCutEnabled ?? recipeApplication?.pauseCutEnabled,
+        styleRules: activeRecipe?.styleRules || styleRules || null,
         editStyleId: stylePayload.editStyleId,
         editStyleName: stylePayload.editStyleName,
         editStyleCategory: stylePayload.editStyleCategory,
@@ -2127,6 +2354,13 @@ router.post('/import-url', requireAuth, async (req, res) => {
     motionBehavior = null,
     cropBehavior = null,
     styleAiInstructions = '',
+    editStyleRecipeId = null,
+    editStyleRecipeName = null,
+    selectedPresetId = null,
+    presetId = null,
+    dynamicEditEnabled = null,
+    pauseCutEnabled = null,
+    styleRules = null,
     metadataCleanup,
     metadataOptions,
     autoSendTelegram = false,
@@ -2188,6 +2422,12 @@ router.post('/import-url', requireAuth, async (req, res) => {
       useFrameCutAnalysis: normalizeBoolean(useFrameCutAnalysis ?? supervisorEnabled),
       explicitPlatform: platform || 'auto',
     });
+    const recipeApplication = await applyEditStyleRecipe({
+      userId: req.user.id,
+      recipeId: editStyleRecipeId,
+      recipeData: editStyleRecipeId ? null : (styleRules ? { ...(req.body || {}), id: editStyleRecipeId || undefined } : null),
+    });
+    const activeRecipe = recipeApplication?.recipe || null;
     const styleOverrides = styleContext?.overrides || {};
     const stylePayload = buildEditStylePayload({
       ...(req.body || {}),
@@ -2206,10 +2446,10 @@ router.post('/import-url', requireAuth, async (req, res) => {
     const resolvedCaptionStyle = styleOverrides.captionStyle || captionStyle;
     const manualCountProvided = hasManualCountInput(req.body || {});
     const manualDurationProvided = hasManualDurationInput(req.body || {});
-    const resolvedCount = manualCountProvided ? selectedCount : (styleOverrides.count ?? selectedCount);
+    const resolvedCount = manualCountProvided ? selectedCount : (recipeApplication?.clipCount ?? styleOverrides.count ?? selectedCount);
     const resolvedClipDurationMode = manualDurationProvided ? clipDurationMode : (styleOverrides.clipDurationMode || clipDurationMode);
     const resolvedClipDurationSeconds = manualDurationProvided ? clipDurationSeconds : (styleOverrides.clipDurationSeconds ?? clipDurationSeconds);
-    const resolvedTargetClipDuration = manualDurationProvided ? targetClipDuration : (styleOverrides.targetClipDuration ?? targetClipDuration);
+    const resolvedTargetClipDuration = manualDurationProvided ? targetClipDuration : (recipeApplication?.targetDuration ?? styleOverrides.targetClipDuration ?? targetClipDuration);
     const resolvedMinClipDuration = manualDurationProvided ? minClipDuration : (styleOverrides.minClipDuration ?? minClipDuration);
     const resolvedMaxClipDuration = manualDurationProvided ? maxClipDuration : (styleOverrides.maxClipDuration ?? maxClipDuration);
     const clipDurationOptions = resolveClipDurationOptions(normalizedProcessingMode, {
@@ -2229,7 +2469,7 @@ router.post('/import-url', requireAuth, async (req, res) => {
       contentType,
       sourceType: resolved.sourceType || effectiveSourceType,
       sourceUrl: effectiveUrl || null,
-      objective,
+      objective: recipeApplication?.objective || objective,
       count: normalizedProcessingMode === 'finalize_approved' ? 1 : (normalizedClipCountMode === 'auto' ? null : Math.min(parseInt(resolvedCount) || 5, 100)),
       clipCountMode: normalizedProcessingMode === 'finalize_approved' ? 'fixed' : normalizedClipCountMode,
       ...clipDurationOptions,
@@ -2242,7 +2482,7 @@ router.post('/import-url', requireAuth, async (req, res) => {
       cutType,
       format,
       instruction,
-      captionStyle: resolvedCaptionStyle,
+      captionStyle: recipeApplication?.captionStyle || resolvedCaptionStyle,
       captionMode: effectiveCaptionMode,
       captionPosition: normalizeCaptionPosition(captionPosition),
       captionsEnabled: Boolean(effectiveCaptionsEnabled),
@@ -2252,14 +2492,21 @@ router.post('/import-url', requireAuth, async (req, res) => {
       captionMinBlockDuration,
       captionMaxBlockDuration,
       dynamicCutsEnabled: Boolean(dynamicCutsEnabled ?? normalizedProcessingMode !== 'raw_review'),
-      editPace: resolvedEditPace || 'medium',
+      dynamicEditEnabled: dynamicEditEnabled ?? recipeApplication?.dynamicEditEnabled,
+      pauseCutEnabled: pauseCutEnabled ?? recipeApplication?.pauseCutEnabled,
+      editPace: recipeApplication?.editPace || resolvedEditPace || 'medium',
       editMode,
       videoContentType,
       destination,
       pauseCutMode,
       mistakeCutMode,
       ...stylePayload,
-      editStyle: resolvedEditStyle,
+      editStyle: recipeApplication?.editStyleId || resolvedEditStyle,
+      editStyleRecipeId: activeRecipe?.id || editStyleRecipeId || null,
+      editStyleRecipeName: activeRecipe?.name || editStyleRecipeName || null,
+      selectedPresetId: activeRecipe?.selectedPresetId || selectedPresetId || presetId || null,
+      presetId: recipeApplication?.presetId || selectedPresetId || presetId || null,
+      styleRules: activeRecipe?.styleRules || styleRules || null,
       metadataCleanup: Boolean(effectiveMetadataCleanup),
       metadataOptions,
       autoSendTelegram: shouldSendTelegram,
@@ -2587,6 +2834,13 @@ router.post('/squad/jobs', requireAuth, async (req, res) => {
       motionBehavior = null,
       cropBehavior = null,
       styleAiInstructions = '',
+      editStyleRecipeId = null,
+      editStyleRecipeName = null,
+      selectedPresetId = null,
+      presetId = null,
+      dynamicEditEnabled = null,
+      pauseCutEnabled = null,
+      styleRules = null,
       metadataCleanup,
       metadataOptions,
       autoSendTelegram = false,
@@ -2649,6 +2903,12 @@ router.post('/squad/jobs', requireAuth, async (req, res) => {
       useFrameCutAnalysis: normalizeBoolean(useFrameCutAnalysis ?? supervisorEnabled),
       explicitPlatform: platform,
     });
+    const recipeApplication = await applyEditStyleRecipe({
+      userId: req.user.id,
+      recipeId: editStyleRecipeId,
+      recipeData: editStyleRecipeId ? null : (styleRules ? { ...(req.body || {}) } : null),
+    });
+    const activeRecipe = recipeApplication?.recipe || null;
     const styleOverrides = styleContext?.overrides || {};
     const stylePayload = buildEditStylePayload({
       ...(req.body || {}),
@@ -2668,12 +2928,12 @@ router.post('/squad/jobs', requireAuth, async (req, res) => {
     const manualCountProvided = hasManualCountInput(req.body || {});
     const manualDurationProvided = hasManualDurationInput(req.body || {});
     const requestedCountInput = requestedClipCount ?? clipCount ?? count;
-    const resolvedCount = manualCountProvided ? requestedCountInput : (styleOverrides.count ?? requestedCountInput);
+    const resolvedCount = manualCountProvided ? requestedCountInput : (recipeApplication?.clipCount ?? styleOverrides.count ?? requestedCountInput);
     const resolvedClipDurationMode = manualDurationProvided ? clipDurationMode : (styleOverrides.clipDurationMode || clipDurationMode);
     const resolvedClipDurationSeconds = manualDurationProvided
       ? (requestedClipDurationSeconds ?? clipDurationSeconds)
       : (styleOverrides.clipDurationSeconds ?? requestedClipDurationSeconds ?? clipDurationSeconds);
-    const resolvedTargetClipDuration = manualDurationProvided ? targetClipDuration : (styleOverrides.targetClipDuration ?? targetClipDuration);
+    const resolvedTargetClipDuration = manualDurationProvided ? targetClipDuration : (recipeApplication?.targetDuration ?? styleOverrides.targetClipDuration ?? targetClipDuration);
     const resolvedMinClipDuration = manualDurationProvided ? minClipDuration : (styleOverrides.minClipDuration ?? minClipDuration);
     const resolvedMaxClipDuration = manualDurationProvided ? maxClipDuration : (styleOverrides.maxClipDuration ?? maxClipDuration);
     const selectedCount = normalizedProcessingMode === 'finalize_approved' ? null : (requestedClipCount ?? clipCount ?? count);
@@ -2691,7 +2951,7 @@ router.post('/squad/jobs', requireAuth, async (req, res) => {
 
     const finalCount = normalizedProcessingMode === 'finalize_approved' ? 1 : (normalizedClipCountMode === 'auto' ? null : Math.min(parseInt(resolvedCount ?? selectedCount) || 5, 100));
     const jobId = createVideoSquadJob(req.user.id, {
-      platform: resolvedPlatform, contentType, objective,
+      platform: resolvedPlatform, contentType, objective: recipeApplication?.objective || objective,
       count: finalCount,
       requestedClipCount: finalCount,
       clipCountMode: normalizedProcessingMode === 'finalize_approved' ? 'fixed' : normalizedClipCountMode,
@@ -2703,7 +2963,7 @@ router.post('/squad/jobs', requireAuth, async (req, res) => {
       dynamicCutsMode,
       minScore: Number(minScore || process.env.VIDEO_DEFAULT_MIN_SCORE || 70),
       cutType, format, instruction,
-      captionStyle: resolvedCaptionStyle,
+      captionStyle: recipeApplication?.captionStyle || resolvedCaptionStyle,
       captionMode: effectiveCaptionMode,
       captionPosition: normalizeCaptionPosition(captionPosition),
       captionsEnabled: Boolean(effectiveCaptionsEnabled),
@@ -2713,14 +2973,21 @@ router.post('/squad/jobs', requireAuth, async (req, res) => {
       captionMinBlockDuration,
       captionMaxBlockDuration,
       dynamicCutsEnabled: Boolean(dynamicCutsEnabled ?? normalizedProcessingMode !== 'raw_review'),
-      editPace: resolvedEditPace || 'medium',
+      dynamicEditEnabled: dynamicEditEnabled ?? recipeApplication?.dynamicEditEnabled,
+      pauseCutEnabled: pauseCutEnabled ?? recipeApplication?.pauseCutEnabled,
+      editPace: recipeApplication?.editPace || resolvedEditPace || 'medium',
       editMode,
       videoContentType,
       destination,
       pauseCutMode,
       mistakeCutMode,
       ...stylePayload,
-      editStyle: resolvedEditStyle,
+      editStyle: recipeApplication?.editStyleId || resolvedEditStyle,
+      editStyleRecipeId: activeRecipe?.id || editStyleRecipeId || null,
+      editStyleRecipeName: activeRecipe?.name || editStyleRecipeName || null,
+      selectedPresetId: activeRecipe?.selectedPresetId || selectedPresetId || presetId || null,
+      presetId: recipeApplication?.presetId || selectedPresetId || presetId || null,
+      styleRules: activeRecipe?.styleRules || styleRules || null,
       metadataCleanup: Boolean(effectiveMetadataCleanup),
       metadataOptions,
       autoSendTelegram: shouldSendTelegram,
@@ -2747,7 +3014,7 @@ router.post('/squad/jobs', requireAuth, async (req, res) => {
           inputPath: resolvedInput,
           userId: req.user.id,
           options: {
-            platform: resolvedPlatform, contentType, objective,
+            platform: resolvedPlatform, contentType, objective: recipeApplication?.objective || objective,
             count: finalCount,
             requestedClipCount: finalCount,
             cutType, format,
@@ -2759,7 +3026,7 @@ router.post('/squad/jobs', requireAuth, async (req, res) => {
             finalizeKeepSingleOutput: Boolean(finalizeKeepSingleOutput),
             dynamicCutsMode,
             minScore: Number(minScore || process.env.VIDEO_DEFAULT_MIN_SCORE || 70),
-            instruction, captionStyle: resolvedCaptionStyle,
+            instruction, captionStyle: recipeApplication?.captionStyle || resolvedCaptionStyle,
             captionMode: effectiveCaptionMode,
             captionPosition: normalizeCaptionPosition(captionPosition),
             captionsEnabled: Boolean(effectiveCaptionsEnabled),
@@ -2769,14 +3036,21 @@ router.post('/squad/jobs', requireAuth, async (req, res) => {
             captionMinBlockDuration,
             captionMaxBlockDuration,
             dynamicCutsEnabled: Boolean(dynamicCutsEnabled ?? normalizedProcessingMode !== 'raw_review'),
-            editPace: resolvedEditPace || 'medium',
+            dynamicEditEnabled: dynamicEditEnabled ?? recipeApplication?.dynamicEditEnabled,
+            pauseCutEnabled: pauseCutEnabled ?? recipeApplication?.pauseCutEnabled,
+            editPace: recipeApplication?.editPace || resolvedEditPace || 'medium',
             editMode,
             videoContentType,
             destination,
             pauseCutMode,
             mistakeCutMode,
             ...stylePayload,
-      editStyle: resolvedEditStyle,
+            editStyle: recipeApplication?.editStyleId || resolvedEditStyle,
+            editStyleRecipeId: activeRecipe?.id || editStyleRecipeId || null,
+            editStyleRecipeName: activeRecipe?.name || editStyleRecipeName || null,
+            selectedPresetId: activeRecipe?.selectedPresetId || selectedPresetId || presetId || null,
+            presetId: recipeApplication?.presetId || selectedPresetId || presetId || null,
+            styleRules: activeRecipe?.styleRules || styleRules || null,
             metadataCleanup: Boolean(effectiveMetadataCleanup),
             metadataOptions,
             autoSendTelegram: shouldSendTelegram,
@@ -3391,18 +3665,26 @@ router.post('/pro/render-with-reference', requireAuth, async (req, res) => {
     const presetId = profile.recommendedPreset || 'viral_shorts_aggressive';
     const preset = getProEditingPreset(presetId);
 
-    const analysis = await runProAnalysis({ sourceVideo, targetDuration: Number(targetDuration), preset });
+    const safeTargetDurRef = safeNum(targetDuration, 10, 5, 600);
+    const safeClipCountRef = safeInt(clipCount, 1, 1, 20);
+    const analysis = await runProAnalysis({ sourceVideo, targetDuration: safeTargetDurRef, preset });
 
     const { getVideoProfessionalToolchainStatus: getToolchainStatus } = await import('../services/video/toolchain/videoToolchainService.js');
     const toolchain = await getToolchainStatus();
 
     const { scoreHighlights: scoreHL } = await import('../services/video/pipeline/highlightScorerService.js');
     const highlightsRaw = scoreHL(analysis, {
-      targetDuration: Number(targetDuration),
-      clipCount: Number(clipCount),
+      targetDuration: safeTargetDurRef,
+      clipCount: safeClipCountRef,
       durationMode: 'normal',
       preset,
       toolchain,
+      objective: req.body?.objective || preset?.objective || null,
+      hookFirstEnabled: req.body?.hookFirstEnabled ?? true,
+      openingStrengthPriority: req.body?.openingStrengthPriority || 'high',
+      avoidDeadAirStart: req.body?.avoidDeadAirStart ?? true,
+      preferSpeechStart: req.body?.preferSpeechStart ?? true,
+      openingPreRollMs: req.body?.openingPreRollMs ?? 300,
     });
     const clips = Array.isArray(highlightsRaw) ? highlightsRaw : (highlightsRaw?.clips || []);
 
@@ -3413,6 +3695,11 @@ router.post('/pro/render-with-reference', requireAuth, async (req, res) => {
       highlights: clips,
       presetId,
       format,
+      hookFirstEnabled: req.body?.hookFirstEnabled ?? true,
+      openingStrengthPriority: req.body?.openingStrengthPriority || 'high',
+      avoidDeadAirStart: req.body?.avoidDeadAirStart ?? true,
+      preferSpeechStart: req.body?.preferSpeechStart ?? true,
+      openingPreRollMs: req.body?.openingPreRollMs ?? 300,
     });
 
     const renderResult = await renderProfessionalEditPlan({
@@ -3464,6 +3751,17 @@ router.post('/full-studio/render', requireAuth, async (req, res) => {
       format = '9:16',
       clipCount = 1,
       targetDuration = 30,
+      hookFirstEnabled = true,
+      openingStrengthPriority = 'high',
+      avoidDeadAirStart = true,
+      preferSpeechStart = true,
+      openingPreRollMs = 300,
+      metadataEnabled,
+      stripSourceMetadata,
+      watermarkEnabled,
+      watermarkText,
+      authorName,
+      editedBy,
     } = req.body || {};
 
     const { sourceVideo } = await resolveProfessionalSource(
@@ -3480,9 +3778,20 @@ router.post('/full-studio/render', requireAuth, async (req, res) => {
       sourceVideo,
       presetId,
       format,
-      clipCount: Number(clipCount),
-      targetDuration: Number(targetDuration),
+      clipCount: safeInt(clipCount, 1, 1, 20),
+      targetDuration: safeNum(targetDuration, 30, 5, 600),
+      hookFirstEnabled,
+      openingStrengthPriority,
+      avoidDeadAirStart,
+      preferSpeechStart,
+      openingPreRollMs,
       userId: req.user?.userId || req.user?.id,
+      metadataEnabled,
+      stripSourceMetadata,
+      watermarkEnabled,
+      watermarkText,
+      authorName,
+      editedBy,
     });
 
     res.json({ ok: true, ...result });
